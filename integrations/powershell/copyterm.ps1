@@ -13,7 +13,9 @@ if (-not $env:COPYTERM_SESSION_ID) {
 # 2. Configure Session Buffer Paths
 $global:__copyterm_data_dir = if ($env:COPYTERM_DATA_DIR) { $env:COPYTERM_DATA_DIR } else { [System.IO.Path]::Combine($env:USERPROFILE, ".copyterm") }
 $global:__copyterm_session_dir = [System.IO.Path]::Combine($global:__copyterm_data_dir, "sessions")
-$null = [System.IO.Directory]::CreateDirectory($global:__copyterm_session_dir)
+try {
+    $null = [System.IO.Directory]::CreateDirectory($global:__copyterm_session_dir)
+} catch {}
 
 $global:__copyterm_buf_file = [System.IO.Path]::Combine($global:__copyterm_session_dir, "$($env:COPYTERM_SESSION_ID).buf")
 $global:__copyterm_meta_file = [System.IO.Path]::Combine($global:__copyterm_session_dir, "$($env:COPYTERM_SESSION_ID).meta")
@@ -33,36 +35,26 @@ try {
     [System.IO.File]::WriteAllText($global:__copyterm_meta_file, $metaContent)
 } catch {}
 
-# 4. Command Recording Function
-function global:__copyterm_record_command_internal {
-    param([string]$cmd)
-    if ([string]::IsNullOrWhiteSpace($cmd)) { return }
-    $ts = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-    $cwd = (Get-Location).Path
-    $record = "`n`e]133;C;cmd=$cmd;cwd=$cwd;ts=$ts`a`n`$ $cmd`n"
+# 4. Start Real Full-Session Transcript (Captures Commands + STDOUT + STDERR)
+try {
+    Start-Transcript -Path $global:__copyterm_buf_file -Append -Force -UseMinimalHeader -ErrorAction SilentlyContinue | Out-Null
+} catch {
     try {
-        [System.IO.File]::AppendAllText($global:__copyterm_buf_file, $record, [System.Text.Encoding]::UTF8)
+        Start-Transcript -Path $global:__copyterm_buf_file -Append -Force -ErrorAction SilentlyContinue | Out-Null
     } catch {}
 }
 
-# 5. Hook the Prompt Function
-if (Test-Path Function:\prompt) {
-    $global:__copyterm_prev_prompt = $Function:prompt
-} else {
-    $global:__copyterm_prev_prompt = { "PS $($executionContext.SessionState.Path.CurrentLocation)$('>' * ($nestedPromptLevel + 1)) " }
-}
-
-$global:__copyterm_last_hist_id = -1
-
-function global:prompt {
-    try {
-        $lastHist = Get-History -Count 1 -ErrorAction SilentlyContinue
-        if ($lastHist -and ($global:__copyterm_last_hist_id -ne $lastHist.Id)) {
-            $global:__copyterm_last_hist_id = $lastHist.Id
-            global:__copyterm_record_command_internal $lastHist.CommandLine
-        }
-    } catch {}
-    
-    # Execute original prompt
-    & $global:__copyterm_prev_prompt
+# 5. Define copyterm Command Shortcut
+function global:copyterm {
+    param(
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]]$ArgsList
+    )
+    $repoRoot = "C:\Users\satis\OneDrive\Desktop\Copyterm"
+    $pyScript = Join-Path $repoRoot "src\copyterm.py"
+    if (Test-Path $pyScript) {
+        python $pyScript @ArgsList
+    } else {
+        & "$repoRoot\copyterm.exe" @ArgsList
+    }
 }

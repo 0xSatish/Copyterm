@@ -41,6 +41,7 @@ class Sanitizer:
     CSI_RE = re.compile(r'\x1b\[[0-9;?]*[a-zA-Z~]')
     OSC_RE = re.compile(r'\x1b\](?:[^\x07\x1b]|\x1b[^\\])*?(?:\x07|\x1b\\)')
     SHELL_MARK_RE = re.compile(r'\x1b\]133;[^\x07\x1b]*?(?:\x07|\x1b\\)')
+    TRANSCRIPT_BANNER_RE = re.compile(r'\*{20,}[\s\S]*?\*{20,}\s*(Transcript started[^\n]*\n)?', re.MULTILINE)
 
     @classmethod
     def strip_ansi(cls, text: str) -> str:
@@ -51,6 +52,17 @@ class Sanitizer:
     @classmethod
     def strip_shell_marks(cls, text: str) -> str:
         return cls.SHELL_MARK_RE.sub('', text)
+
+    @classmethod
+    def strip_transcript_banners(cls, text: str) -> str:
+        text = cls.TRANSCRIPT_BANNER_RE.sub('', text)
+        # Also clean leftover transcript notices
+        lines = []
+        for line in text.splitlines(keepends=True):
+            if "Transcript started, output file is" in line or "Transcript stopped, output file is" in line:
+                continue
+            lines.append(line)
+        return "".join(lines)
 
     @classmethod
     def collapse_carriage_returns(cls, text: str) -> str:
@@ -95,10 +107,16 @@ class Sanitizer:
 
     @classmethod
     def sanitize(cls, text: str) -> str:
-        s = cls.strip_ansi(text)
-        s = cls.collapse_carriage_returns(s)
-        s = cls.strip_shell_marks(s)
-        return s
+        # 1. Strip UTF-8 BOM
+        text = text.lstrip('\ufeff')
+        # 2. Strip raw ANSI escape codes first
+        text = cls.strip_ansi(text)
+        # 3. Collapse carriage returns and line overwrites
+        text = cls.collapse_carriage_returns(text)
+        # 4. Strip transcript banners and shell marks
+        text = cls.strip_transcript_banners(text)
+        text = cls.strip_shell_marks(text)
+        return text
 
 # --- Secret Redaction ---
 
@@ -131,11 +149,35 @@ class Clipboard:
             user32 = ctypes.windll.user32
             kernel32 = ctypes.windll.kernel32
 
+            user32.OpenClipboard.argtypes = [ctypes.c_void_p]
+            user32.OpenClipboard.restype = ctypes.c_bool
+            user32.EmptyClipboard.restype = ctypes.c_bool
+            user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+            user32.SetClipboardData.restype = ctypes.c_void_p
+            user32.CloseClipboard.restype = ctypes.c_bool
+
+            kernel32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
+            kernel32.GlobalAlloc.restype = ctypes.c_void_p
+            kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+            kernel32.GlobalLock.restype = ctypes.c_void_p
+            kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+            kernel32.GlobalUnlock.restype = ctypes.c_bool
+            kernel32.GlobalFree.argtypes = [ctypes.c_void_p]
+            kernel32.GlobalFree.restype = ctypes.c_void_p
+
             GMEM_MOVEABLE = 0x0002
             CF_UNICODETEXT = 13
 
-            if not user32.OpenClipboard(None):
+            # Retry open clipboard up to 10 times in case of transient locks
+            opened = False
+            for _ in range(10):
+                if user32.OpenClipboard(None):
+                    opened = True
+                    break
+                time.sleep(0.05)
+            if not opened:
                 return False
+
             try:
                 user32.EmptyClipboard()
                 encoded = text.encode('utf-16-le') + b'\x00\x00'
@@ -159,7 +201,8 @@ class Clipboard:
                 try:
                     p = subprocess.Popen(["wl-copy"], stdin=subprocess.PIPE)
                     p.communicate(text.encode('utf-8'))
-                    return p.returncode == 0
+                    if p.returncode == 0:
+                        return True
                 except:
                     pass
             if os.environ.get("DISPLAY"):
@@ -177,6 +220,36 @@ class Clipboard:
             sys.stdout.write(f"\x1b]52;c;{b64}\x07")
             sys.stdout.flush()
             return True
+
+    @staticmethod
+    def get_text() -> str:
+        if sys.platform == "win32":
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            CF_UNICODETEXT = 13
+
+            opened = False
+            for _ in range(5):
+                if user32.OpenClipboard(None):
+                    opened = True
+                    break
+                time.sleep(0.02)
+            if not opened:
+                return ""
+            try:
+                h_mem = user32.GetClipboardData(CF_UNICODETEXT)
+                if not h_mem:
+                    return ""
+                ptr = kernel32.GlobalLock(h_mem)
+                if not ptr:
+                    return ""
+                try:
+                    return ctypes.wstring_at(ptr)
+                finally:
+                    kernel32.GlobalUnlock(h_mem)
+            finally:
+                user32.CloseClipboard()
+        return ""
 
 # --- Session Resolver ---
 
@@ -223,7 +296,8 @@ class SessionManager:
         if not buf_path.exists():
             return ""
         try:
-            content = buf_path.read_text(encoding='utf-8', errors='replace')
+            # Read raw bytes to preserve literal \r without universal-newline translation
+            content = buf_path.read_bytes().decode('utf-8-sig', errors='replace')
             if last_n > 0:
                 lines = content.splitlines(keepends=True)
                 return "".join(lines[-last_n:])
@@ -234,6 +308,17 @@ class SessionManager:
 # --- CLI Main ---
 
 def main():
+    if hasattr(sys.stdout, 'reconfigure'):
+        try:
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        except:
+            pass
+    if hasattr(sys.stderr, 'reconfigure'):
+        try:
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+        except:
+            pass
+
     parser = argparse.ArgumentParser(
         prog="copyterm",
         description="End-to-End Cross-Platform Terminal Session Capture Utility"

@@ -8,16 +8,14 @@ This document provides a detailed breakdown of `copyterm` capabilities across op
 
 | Operating System / Environment | Terminal Emulator | Shell | Capture Mechanism | Session Isolation | Clipboard Backend | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :---: |
-| **Windows 10 / 11** | Windows Terminal | PowerShell 5.1 | Prompt hook / PSReadLine | `$env:COPYTERM_SESSION_ID` + PPID | Win32 API | **Fully Supported** |
-| **Windows 10 / 11** | Windows Terminal | PowerShell 7+ | Prompt hook / PSReadLine | `$env:COPYTERM_SESSION_ID` + PPID | Win32 API | **Fully Supported** |
-| **Windows 10 / 11** | Windows Terminal | CMD (Command Prompt) | Session wrapper / Prompt macro | Process tree PPID | Win32 API | **Fully Supported** |
-| **Windows 10 / 11** | Windows Console (ConHost) | PowerShell / CMD | Console Handle / Hook | Process PID | Win32 API | **Fully Supported** |
-| **Ubuntu / Debian / Mint** | GNOME Terminal | Bash 4.x / 5.x | `PROMPT_COMMAND` / `trap DEBUG` | Shell PID `$$` + PTY | Wayland (`wl-copy`) / X11 (`xclip`) | **Fully Supported** |
-| **Fedora / RHEL / Arch** | GNOME Terminal / Konsole | Zsh 5.x | `preexec` / `precmd` | Shell PID `$$` + PTY | Wayland (`wl-copy`) / X11 (`xclip`) | **Fully Supported** |
-| **Cross-Platform** | Alacritty / Kitty / WezTerm | Bash / Zsh / Fish | Shell Integration / PTY | Shell PID `$$` + Env | Wayland / X11 / Win32 | **Fully Supported** |
-| **Cross-Platform** | tmux (Multiple Panes) | Any Shell | `tmux capture-pane` | Pane ID `$TMUX_PANE` | OSC 52 / Native | **Fully Supported** |
-| **Cross-Platform** | VS Code Integrated Terminal | Any Shell | Shell Integration | Shell PID + Env | Native OS Clipboard | **Fully Supported** |
-| **Remote SSH** | Any Terminal | Remote Shell | Remote Hook / Session buf | Remote PID | OSC 52 Escape Sequence | **Fully Supported** |
+| **Windows 10 / 11** | Windows Terminal / ConHost | PowerShell 5.1 & 7+ | Continuous Transcript / Lifecycle Hook | `$env:COPYTERM_SESSION_ID` + PPID | Win32 API | **VERIFIED** |
+| **Windows 10 / 11** | Windows Terminal / ConHost | CMD (Command Prompt) | Explicit Session Wrapper (`copyterm session`) | Process tree PPID | Win32 API | **LIMITATION (Unwrapped native CMD not captured)** |
+| **Windows (Git Bash)** | Git Bash / Mintty | GNU Bash 5.x | Stream Tee / Process Substitution | Shell PID `$$` + Env | Win32 / OSC 52 | **VERIFIED** |
+| **Linux (Ubuntu / Debian)** | GNOME Terminal / Alacritty | Bash 4.x / 5.x | Stream Tee / Lifecycle Hook | Shell PID `$$` + PTY | Wayland (`wl-copy`) / X11 (`xclip`) | **VERIFIED (Architecture & Bash verified)** |
+| **Linux (Fedora / Arch)** | GNOME Terminal / Kitty | Zsh 5.x | `preexec` / `precmd` | Shell PID `$$` + PTY | Wayland (`wl-copy`) / X11 (`xclip`) | **Architecture Complete** |
+| **Linux (WSL)** | Windows Terminal | Bash / Zsh | Shell Integration | Shell PID `$$` + Env | Wayland / Win32 | **UNTESTED (WSL not installed on host)** |
+| **Cross-Platform** | tmux (Multiple Panes) | Any Shell | `tmux capture-pane` | Pane ID `$TMUX_PANE` | OSC 52 / Native | **UNTESTED on this host (tmux not installed)** |
+| **Remote SSH** | Any Terminal | Remote Shell | Remote Hook / OSC 52 | Remote PID | OSC 52 Terminal Sequence | **UNTESTED (No remote host in test env)** |
 
 ---
 

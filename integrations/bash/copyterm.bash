@@ -29,21 +29,14 @@ last_active_time_ms=$(date +%s%3N 2>/dev/null || date +%s)
 backend=shell_integration
 EOF
 
-__copyterm_record() {
-    local cmd="$1"
-    [ -z "$cmd" ] && return
-    local ts=$(date +%s%3N 2>/dev/null || date +%s)
-    printf "\n\033]133;C;cmd=%s;cwd=%s;ts=%s\007\n$ %s\n" "$cmd" "$PWD" "$ts" "$cmd" >> "$__copyterm_buf_file" 2>/dev/null
-}
-
-__copyterm_prompt_command() {
-    local last_cmd=$(history 1 | sed 's/^[ ]*[0-9]*[ ]*//')
-    if [ "$last_cmd" != "$__copyterm_last_cmd" ] && [ -n "$last_cmd" ]; then
-        __copyterm_last_cmd="$last_cmd"
-        __copyterm_record "$last_cmd"
-    fi
-}
-
-if [[ ! "$PROMPT_COMMAND" =~ __copyterm_prompt_command ]]; then
-    PROMPT_COMMAND="__copyterm_prompt_command;${PROMPT_COMMAND:-}"
+# Start Output Capture via stream tee
+if [ -z "$__COPYTERM_CAPTURE_ACTIVE" ]; then
+    export __COPYTERM_CAPTURE_ACTIVE=1
+    exec > >(tee -a "$__copyterm_buf_file") 2>&1
 fi
+
+copyterm() {
+    python3 "C:/Users/satis/OneDrive/Desktop/Copyterm/src/copyterm.py" "$@" 2>/dev/null || \
+    python "C:/Users/satis/OneDrive/Desktop/Copyterm/src/copyterm.py" "$@" 2>/dev/null || \
+    "C:/Users/satis/OneDrive/Desktop/Copyterm/copyterm.exe" "$@"
+}

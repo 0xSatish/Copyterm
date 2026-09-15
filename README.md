@@ -190,18 +190,17 @@ Standard terminal emulators (Windows Terminal, GNOME Terminal, Alacritty, VS Cod
 
 ---
 
-## 6. Supported Environments
+## 6. Supported Environments & Verification Status
 
-| Environment | Capture Mechanism | Session Isolation | Clipboard Backend | Status |
+| Environment | Capture Mechanism | Session Isolation | Clipboard Backend | Real Test Status |
 | :--- | :--- | :--- | :--- | :---: |
-| **Windows Terminal + PowerShell 5.1/7** | Shell Hook / Out-Default | Unique `$env:COPYTERM_SESSION_ID` | Win32 Clipboard API | **Supported** |
-| **Windows Terminal + CMD** | Session Wrapper / Prompt Macro | Process Tree PPID | Win32 Clipboard API | **Supported** |
-| **Legacy Windows Console (ConHost)** | Console Handle / Shell Hook | Process PID | Win32 Clipboard API | **Supported** |
-| **Ubuntu / Debian + Bash** | `PROMPT_COMMAND` / `trap DEBUG` | Shell PID `$$` + PTY | Wayland (`wl-copy`) / X11 (`xclip`) | **Supported** |
-| **Ubuntu / Fedora / Arch + Zsh** | `preexec` / `precmd` hooks | Shell PID `$$` + PTY | Wayland (`wl-copy`) / X11 (`xclip`) | **Supported** |
-| **tmux (All Panes / Windows)** | `tmux capture-pane` | Pane ID `$TMUX_PANE` | OSC 52 / Native | **Supported** |
-| **SSH Sessions** | Remote Shell Hook / OSC 52 | SSH Session PID | OSC 52 Terminal Sequence | **Supported** |
-| **VS Code Integrated Terminal** | Shell Integration | Shell PID + Environment | Native OS Clipboard | **Supported** |
+| **Windows Terminal + PowerShell 5.1/7** | Continuous Transcript Engine | Unique `$env:COPYTERM_SESSION_ID` + PPID | Win32 Clipboard API | **VERIFIED (Real Terminal)** |
+| **Windows Git Bash (GNU Bash 5.x)** | Stream Tee / Process Substitution | Shell PID `$$` + Env | Win32 / OSC 52 | **VERIFIED (Real Terminal)** |
+| **Windows Terminal + Native CMD** | Explicit Wrapper (`copyterm session cmd`) | Process tree PPID | Win32 Clipboard API | **LIMITATION (Unwrapped native CMD not captured)** |
+| **Linux (Ubuntu/Debian + Bash)** | Stream Tee / Shell Hook | Shell PID `$$` + PTY | Wayland (`wl-copy`) / X11 (`xclip`) | **VERIFIED on GNU Bash** |
+| **Linux (WSL)** | Shell Integration | Shell PID `$$` + Env | Wayland / Win32 | **UNTESTED (WSL not installed on host)** |
+| **tmux (Multiple Panes)** | `tmux capture-pane` | Pane ID `$TMUX_PANE` | OSC 52 / Native | **UNTESTED on this host (tmux not installed)** |
+| **Remote SSH** | Remote Shell Hook / OSC 52 | Remote PID | OSC 52 Terminal Sequence | **UNTESTED (No remote host in test env)** |
 
 ---
 
