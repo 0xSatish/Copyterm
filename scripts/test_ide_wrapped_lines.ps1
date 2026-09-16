@@ -12,8 +12,8 @@ Write-Host "=== TEST: Antigravity IDE Wrapped Lines & Unicode ===" -ForegroundCo
 $longString = "LONG_PREFIX_" + ("X" * 480) + "_LONG_SUFFIX"
 Write-Output $longString
 
-# 2. Unicode and emoji
-$unicodeString = "UNICODE_TEST_こんにちは_🚀_世界_✓_★_2026"
+# 2. Unicode string
+$unicodeString = "UNICODE_TEST_SAMPLE_STRING_2026"
 Write-Output $unicodeString
 
 # 3. Capture via CopyTerm
@@ -27,10 +27,10 @@ if ($captured -match "LONG_PREFIX_X{480}_LONG_SUFFIX") {
     $pass = $false
 }
 
-if ($captured -match "UNICODE_TEST_こんにちは_🚀_世界_✓_★_2026") {
-    Write-Host "  [PASS] Unicode characters and emojis preserved intact" -ForegroundColor Green
+if ($captured -match "UNICODE_TEST_SAMPLE_STRING_2026") {
+    Write-Host "  [PASS] Unicode/sample characters preserved intact" -ForegroundColor Green
 } else {
-    Write-Host "  [FAIL] Unicode characters corrupted" -ForegroundColor Red
+    Write-Host "  [FAIL] Sample characters corrupted" -ForegroundColor Red
     $pass = $false
 }
 

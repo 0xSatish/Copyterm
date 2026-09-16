@@ -80,15 +80,15 @@ Write-Host "`n[Test 4] Testing output capture across multiple directory transiti
 Clear-Host # New Epoch
 $currEpoch = $global:__copyterm_epoch
 
-cmd.exe /c "echo DIR_TEST_START"
+cmd.exe /c "echo DIR_TEST_START" | Out-Default
 Set-Location $env:USERPROFILE
-cmd.exe /c "echo AFTER_CD_HOME"
+cmd.exe /c "echo AFTER_CD_HOME" | Out-Default
 Set-Location (Join-Path $env:USERPROFILE "Downloads")
-cmd.exe /c "echo AFTER_CD_DOWNLOADS"
+cmd.exe /c "echo AFTER_CD_DOWNLOADS" | Out-Default
 Set-Location $repoRoot
-cmd.exe /c "echo AFTER_CD_COPYTERM"
+cmd.exe /c "echo AFTER_CD_COPYTERM" | Out-Default
 Set-Location $env:TEMP
-cmd.exe /c "echo AFTER_CD_TEMP"
+cmd.exe /c "echo AFTER_CD_TEMP" | Out-Default
 
 # Capture via cpt --stdout
 $captureFile = Join-Path $env:TEMP "cpt_cwd_test_output.txt"
@@ -112,14 +112,17 @@ if ($allPresent) {
 
 # Test 5: Clear boundary with subsequent directory transitions
 Write-Host "`n[Test 5] Testing clear boundary with directory transitions..." -ForegroundColor Yellow
-cmd.exe /c "echo OLD_DIR_DATA_1"
-cmd.exe /c "echo OLD_DIR_DATA_2"
+Write-Output "OLD_DIR_DATA_1" | Out-Default
+Write-Output "OLD_DIR_DATA_2" | Out-Default
 
 Clear-Host # Advance epoch
+Write-Host "DEBUG EPOCH 2: $(Get-Content $global:__copyterm_epoch_file)"
 Set-Location $env:USERPROFILE
-cmd.exe /c "echo POST_CLEAR_HOME_LINE"
+Write-Output "POST_CLEAR_HOME_LINE" | Out-Default
 Set-Location (Join-Path $env:USERPROFILE "Downloads")
-cmd.exe /c "echo POST_CLEAR_DOWNLOADS_LINE"
+Write-Output "POST_CLEAR_DOWNLOADS_LINE" | Out-Default
+
+Start-Sleep -Milliseconds 200
 
 $captureFile2 = Join-Path $env:TEMP "cpt_cwd_test_output2.txt"
 if (Test-Path $captureFile2) { Remove-Item $captureFile2 -Force }
@@ -130,10 +133,10 @@ $capturedText2 = Get-Content $captureFile2 -Raw
 $oldExcluded = ($capturedText2 -notmatch "OLD_DIR_DATA")
 $newIncluded = ($capturedText2 -match "POST_CLEAR_HOME_LINE") -and ($capturedText2 -match "POST_CLEAR_DOWNLOADS_LINE")
 
+Write-Host "Captured text 2:`n$capturedText2" -ForegroundColor Magenta
 if ($oldExcluded -and $newIncluded) {
     Write-Host "  -> PASS: Pre-clear data excluded and post-clear cross-directory data captured" -ForegroundColor Green
 } else {
-    Write-Host "Captured text 2:`n$capturedText2" -ForegroundColor Magenta
     Write-Error "FAIL: Clear boundary failed during directory transitions!"
 }
 

@@ -5,19 +5,19 @@ $repoRoot = if ($PSScriptRoot) { (Resolve-Path "$PSScriptRoot\..").Path } else {
 . (Join-Path $repoRoot "integrations\powershell\copyterm.ps1")
 
 Write-Host "`n=== STEP 2: Run Write-Output COPYTERM_REAL_TEST_001 ==="
-Write-Output "COPYTERM_REAL_TEST_001"
+Write-Output "COPYTERM_REAL_TEST_001" | Out-Default
 
 Write-Host "`n=== STEP 3: Run copyterm --stdout ==="
 copyterm --stdout
 
 Write-Host "`n=== STEP 4: Run Get-ChildItem -Name ==="
-Get-ChildItem -Name
+Get-ChildItem -Name | Out-Default
 
 Write-Host "`n=== STEP 5: Run copyterm --stdout (Check 2) ==="
 copyterm --stdout
 
 Write-Host "`n=== STEP 6: Run Write-Output COPYTERM_REAL_TEST_002 and copyterm ==="
-Write-Output "COPYTERM_REAL_TEST_002"
+Write-Output "COPYTERM_REAL_TEST_002" | Out-Default
 copyterm
 
 Write-Host "`n=== STEP 7: Inspect Real Clipboard Content ==="

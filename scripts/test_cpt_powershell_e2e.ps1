@@ -56,20 +56,22 @@ if ($epochData.epoch_id -eq 2) {
 # Test 5: Output generation and cpt --stdout capture
 Write-Host "`n[Test 5] Generating test payload in current epoch and capturing..." -ForegroundColor Yellow
 Clear-Host # Epoch 3
-1..20 | ForEach-Object { cmd.exe /c "echo PS_EPOCH3_LINE_$_" }
+1..100 | ForEach-Object { Write-Output "PS_EPOCH3_LINE_$($_)_" + ("X" * 60) }
 
 $captureFile = Join-Path $env:TEMP "cpt_stdout_test.txt"
 if (Test-Path $captureFile) { Remove-Item $captureFile -Force }
 
-Start-Sleep -Milliseconds 500
-Write-Host "DEBUG BUF FILE:" (Get-Content $global:__copyterm_buf_file -Raw)
-Write-Host "DEBUG EPOCH JSON:" (Get-Content $epochFile -Raw)
+Start-Sleep -Milliseconds 200
+Write-Host "DEBUG: session_id = $env:COPYTERM_SESSION_ID"
+Write-Host "DEBUG: epoch_file = $(Get-Content $epochFile)"
+Write-Host "DEBUG: buf_file length = $((Get-Item $global:__copyterm_buf_file).Length)"
+
 cpt --session-id $env:COPYTERM_SESSION_ID --stdout > $captureFile
 $capturedContent = Get-Content $captureFile -Raw
 
 $allLinesPresent = $true
-1..20 | ForEach-Object {
-    if ($capturedContent -notmatch "PS_EPOCH3_LINE_$_") {
+1..100 | ForEach-Object {
+    if ($capturedContent -notmatch "PS_EPOCH3_LINE_$($_)_") {
         $allLinesPresent = $false
     }
 }
@@ -95,18 +97,18 @@ if ($docOut -match "Command:\s+cpt" -and $docOut -match "Current Epoch:\s+3" -an
 Write-Host "`n[Test 7] Testing Multi-Terminal Session Isolation..." -ForegroundColor Yellow
 $testIsoScript = {
     param($termName, $repoRoot)
-    $env:COPYTERM_SESSION_ID = "test_sess_$termName"
     . (Join-Path $repoRoot "integrations\powershell\copyterm.ps1")
     
     # Pre-clear output
-    cmd.exe /c "echo OLD_${termName}_1"
-    cmd.exe /c "echo OLD_${termName}_2"
+    Write-Output "OLD_${termName}_1" | Out-Default
+    Write-Output "OLD_${termName}_2" | Out-Default
     Clear-Host
     # Post-clear output
-    1..50 | ForEach-Object { cmd.exe /c "echo NEW_${termName}_$_" }
+    1..50 | ForEach-Object { Write-Output "NEW_${termName}_$_" | Out-Default }
     
+    Start-Sleep -Milliseconds 200
     # Capture stdout
-    $captured = cpt --session-id "test_sess_$termName" --stdout | Out-String
+    $captured = cpt --stdout | Out-String
     return $captured
 }
 

@@ -5,19 +5,9 @@ $repoRoot = if ($PSScriptRoot) { (Resolve-Path "$PSScriptRoot\..").Path } else {
 $installedPs1 = Join-Path $env:USERPROFILE ".copyterm\integrations\powershell\copyterm.ps1"
 $ps1Path = if (Test-Path $installedPs1) { $installedPs1 } else { Join-Path $repoRoot "integrations\powershell\copyterm.ps1" }
 
-$psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = "powershell.exe"
-$psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command -"
-$psi.RedirectStandardInput = $true
-$psi.RedirectStandardOutput = $true
-$psi.UseShellExecute = $false
-
-$proc = [System.Diagnostics.Process]::Start($psi)
-$proc.StandardInput.WriteLine(". '$ps1Path'")
-$proc.StandardInput.WriteLine("Write-Output 'CLIPBOARD_REAL_TEST_VERIFICATION_MARKER_789'")
-$proc.StandardInput.WriteLine("cpt")
-$proc.StandardInput.WriteLine("exit")
-$proc.WaitForExit(5000)
+$scriptBlock = "& { . '$ps1Path'; Write-Output 'CLIPBOARD_REAL_TEST_VERIFICATION_MARKER_789' | Out-Default; cpt }"
+$procOut = powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $scriptBlock | Out-String
+Write-Host "Process output:`n$procOut"
 
 Write-Host "`nRetrieving clipboard via separate Windows Forms and PowerShell API..."
 Add-Type -AssemblyName System.Windows.Forms

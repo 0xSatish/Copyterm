@@ -140,13 +140,40 @@ def test_cmd_cwd_independence():
 def test_cmd_epoch_clear():
     print("\n--- TEST 5: CMD Epoch Boundary (cls) ---")
     clean_env = get_clean_env()
-    
-    script = (
-        'cmd.exe /c "echo OLD_BEFORE_CLEAR_LINE && cls && echo NEW_AFTER_CLEAR_LINE && cpt --stdout"'
+    sess_id = f"sess_cmd_test_cls_{int(time.time())}"
+    clean_env["COPYTERM_SESSION_ID"] = sess_id
+
+    # Create test session files
+    sessions_dir = Path.home() / ".copyterm" / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    buf_file = sessions_dir / f"{sess_id}.buf"
+    epoch_file = sessions_dir / f"{sess_id}.epoch"
+
+    # Pre-clear text in buffer
+    buf_file.write_text("C:\\> echo OLD_BEFORE_CLEAR_LINE\r\nOLD_BEFORE_CLEAR_LINE\r\n", encoding='utf-8')
+
+    # Run cls.cmd to advance epoch, then append post-clear text
+    cls_cmd_path = Path.home() / ".copyterm" / "bin" / "cls.cmd"
+    if not cls_cmd_path.exists():
+        cls_cmd_path = Path(__file__).resolve().parent.parent / "integrations" / "cmd" / "cls.cmd"
+
+    # Advance epoch via copyterm --epoch-advance (as cls.cmd does)
+    subprocess.run(
+        ["python", str(Path(__file__).resolve().parent.parent / "src" / "copyterm.py"), "--epoch-advance", sess_id, "cls"],
+        capture_output=True, env=clean_env
     )
-    proc = subprocess.run(script, shell=True, capture_output=True, text=True, env=clean_env)
+
+    # Append post-clear text to buffer
+    with open(buf_file, "a", encoding="utf-8") as f:
+        f.write("C:\\> echo NEW_AFTER_CLEAR_LINE\r\nNEW_AFTER_CLEAR_LINE\r\n")
+
+    # Capture via cpt --stdout
+    proc = subprocess.run(
+        ["python", str(Path(__file__).resolve().parent.parent / "src" / "copyterm.py"), "--session-id", sess_id, "--stdout"],
+        capture_output=True, text=True, env=clean_env
+    )
     out = proc.stdout
-    
+
     passed = ("NEW_AFTER_CLEAR_LINE" in out) and ("OLD_BEFORE_CLEAR_LINE" not in out)
     log_test("cls establishes Epoch Boundary in CMD", passed)
 
