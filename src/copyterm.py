@@ -505,6 +505,8 @@ class EpochManager:
             "session_id": session_id or "",
             "epoch_id": 0,
             "clear_count": 0,
+            "byte_offset": 0,
+            "line_offset": 0,
             "last_clear_timestamp_ms": 0,
             "latest_boundary_token": ""
         }
@@ -524,12 +526,6 @@ class EpochManager:
         if token and token in raw_text:
             idx = raw_text.rfind(token)
             return raw_text[idx + len(token):].lstrip("\r\n")
-
-        # Method 2: Transcript session start banner match (when transcript is restarted per epoch)
-        ts_banners = list(re.finditer(r'\*{10,}[\s\S]*?transcript start[\s\S]*?\*{10,}\r?\n|Transcript started[^\n]*\n', raw_text, re.IGNORECASE))
-        if ts_banners and epoch_id > 0:
-            last_banner = ts_banners[-1]
-            return raw_text[last_banner.end():].lstrip("\r\n")
 
         # Method 2: Shell prompt clear boundary slicing (for xterm.js / IDE buffer & terminal emulators)
         # Slices everything after the prompt line where clear / cls / Clear-Host was invoked.
@@ -556,15 +552,15 @@ class EpochManager:
             sliced_lines = lines[last_idx + 1:]
             return "".join(sliced_lines).lstrip("\r\n")
 
-        # Method 3: Line offset / byte offset slicing (for transcript buffer files where commands were executed via script)
+        # Method 3: Line offset slicing (for transcript buffer files where commands were executed via script)
         line_offset = epoch_state.get("line_offset", 0)
         if line_offset and line_offset > 0:
-            lines = raw_text.splitlines(keepends=True)
             if line_offset < len(lines):
                 return "".join(lines[line_offset:]).lstrip("\r\n")
             else:
                 return ""
 
+        # Method 4: Byte offset slicing
         byte_offset = epoch_state.get("byte_offset", 0)
         if byte_offset and byte_offset > 0:
             raw_bytes = raw_text.encode('utf-8', errors='replace')
@@ -573,9 +569,8 @@ class EpochManager:
             else:
                 return ""
 
-        # Fallback: if epoch_id > 0 but clear command is not found (e.g. scrollback buffer rolled over),
-        # return the available buffer
-        return raw_text
+        # Fallback: if epoch_id > 0 and no content after clear, return empty
+        return ""
 
     @staticmethod
     def advance_epoch(session_id: str, clear_cmd: str = "cls") -> Dict[str, Any]:
@@ -588,9 +583,14 @@ class EpochManager:
 
         buf_file = sessions_dir / f"{session_id}.buf"
         line_offset = 0
+        byte_offset = 0
         if buf_file.exists():
             try:
-                line_offset = len(buf_file.read_text(encoding='utf-8', errors='replace').splitlines())
+                byte_offset = buf_file.stat().st_size
+            except:
+                pass
+            try:
+                line_offset = len(SessionManager.read_buffer(buf_file).splitlines())
             except:
                 pass
 
@@ -598,6 +598,7 @@ class EpochManager:
             "session_id": session_id,
             "epoch_id": new_epoch,
             "clear_count": new_epoch,
+            "byte_offset": byte_offset,
             "line_offset": line_offset,
             "last_clear_timestamp_ms": ts,
             "latest_boundary_token": token,
@@ -605,12 +606,14 @@ class EpochManager:
         }
 
         ep_file = EpochManager.get_epoch_file(session_id)
-        ep_file.write_text(json.dumps(updated_state), encoding='utf-8')
-
-        if buf_file.exists():
+        # Safe atomic write to .epoch file (never touching live .buf)
+        try:
+            tmp_file = ep_file.with_suffix(f".{os.urandom(4).hex()}.tmp")
+            tmp_file.write_text(json.dumps(updated_state), encoding='utf-8')
+            tmp_file.replace(ep_file)
+        except:
             try:
-                with open(buf_file, "a", encoding="utf-8") as f:
-                    f.write(f"\n{token}\n")
+                ep_file.write_text(json.dumps(updated_state), encoding='utf-8')
             except:
                 pass
 
@@ -726,6 +729,7 @@ class SessionManager:
             "session_id": sess_id,
             "epoch_id": 0,
             "clear_count": 0,
+            "byte_offset": 0,
             "line_offset": 0,
             "last_clear_timestamp_ms": 0,
             "latest_boundary_token": ""

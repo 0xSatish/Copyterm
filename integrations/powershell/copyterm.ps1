@@ -40,7 +40,7 @@ try {
 } catch {}
 
 $initialEpochContent = @"
-{"session_id":"$($env:COPYTERM_SESSION_ID)","epoch_id":0,"clear_count":0,"line_offset":0,"last_clear_timestamp_ms":0,"latest_boundary_token":""}
+{"session_id":"$($env:COPYTERM_SESSION_ID)","epoch_id":0,"clear_count":0,"line_offset":0,"byte_offset":0,"last_clear_timestamp_ms":0,"latest_boundary_token":""}
 "@
 try {
     [System.IO.File]::WriteAllText($global:__copyterm_epoch_file, $initialEpochContent)
@@ -61,36 +61,54 @@ function global:Clear-Host {
     param()
     
     $global:__copyterm_epoch = [int]$global:__copyterm_epoch + 1
-    $token = "CPT_EPOCH_BOUND_${env:COPYTERM_SESSION_ID}_$($global:__copyterm_epoch)"
     $ts = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     
-    # Capture current buffer line count before clear
-    $lineOffset = 0
+    # Safely obtain current byte offset and line offset from .buf without exclusive locking
+    $byteOffset = [long]0
+    $lineOffset = [long]0
     try {
-        if (Test-Path $global:__copyterm_buf_file) {
-            $lines = [System.IO.File]::ReadAllLines($global:__copyterm_buf_file)
-            $lineOffset = $lines.Length
+        if (Test-Path -LiteralPath $global:__copyterm_buf_file) {
+            $fi = New-Object System.IO.FileInfo($global:__copyterm_buf_file)
+            if ($fi.Exists) {
+                $byteOffset = $fi.Length
+            }
+            # Count lines using non-exclusive Read + ReadWrite sharing
+            $fs = New-Object System.IO.FileStream($global:__copyterm_buf_file, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            try {
+                $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+                try {
+                    $cnt = 0
+                    while ($null -ne ($sr.ReadLine())) {
+                        $cnt++
+                    }
+                    $lineOffset = $cnt
+                } finally {
+                    $sr.Close()
+                }
+            } finally {
+                $fs.Close()
+            }
         }
     } catch {}
 
     $epochJson = @"
-{"session_id":"$($env:COPYTERM_SESSION_ID)","epoch_id":$($global:__copyterm_epoch),"clear_count":$($global:__copyterm_epoch),"line_offset":$lineOffset,"last_clear_timestamp_ms":$ts,"latest_boundary_token":"$token","clear_command":"Clear-Host"}
+{"session_id":"$($env:COPYTERM_SESSION_ID)","epoch_id":$($global:__copyterm_epoch),"clear_count":$($global:__copyterm_epoch),"byte_offset":$byteOffset,"line_offset":$lineOffset,"last_clear_timestamp_ms":$ts,"latest_boundary_token":"","clear_command":"Clear-Host"}
 "@
+    # Safe atomic update to dedicated .epoch metadata file
     try {
-        [System.IO.File]::WriteAllText($global:__copyterm_epoch_file, $epochJson)
-    } catch {}
+        $tempEpoch = "$($global:__copyterm_epoch_file).$([System.Guid]::NewGuid().ToString('N')).tmp"
+        [System.IO.File]::WriteAllText($tempEpoch, $epochJson, [System.Text.Encoding]::UTF8)
+        if ([System.IO.File]::Exists($global:__copyterm_epoch_file)) {
+            [System.IO.File]::Delete($global:__copyterm_epoch_file)
+        }
+        [System.IO.File]::Move($tempEpoch, $global:__copyterm_epoch_file)
+    } catch {
+        try {
+            [System.IO.File]::WriteAllText($global:__copyterm_epoch_file, $epochJson, [System.Text.Encoding]::UTF8)
+        } catch {}
+    }
 
-    # Write boundary token to buffer stream
-    try {
-        $fs = New-Object System.IO.FileStream($global:__copyterm_buf_file, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
-        $sw = New-Object System.IO.StreamWriter($fs, [System.Text.Encoding]::UTF8)
-        $sw.WriteLine("`n$token")
-        $sw.Flush()
-        $sw.Close()
-        $fs.Close()
-    } catch {}
-
-    # Perform native terminal clear
+    # Perform native terminal screen clearing
     try {
         [System.Console]::Clear()
     } catch {

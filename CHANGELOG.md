@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Slicing is echo-safe: commands like `echo "clear"` or printed text containing "clear" do NOT reset the epoch.
   - Multiple `clear` commands properly pick the latest epoch boundary.
   - Empty post-clear state returns 0 lines and never falls back to pre-clear history.
+  - **Lock-Free Concurrency Architecture**: Decoupled epoch metadata state (`.epoch`) from live capture stream buffers (`.buf`), eliminating Windows file-locking constructor exceptions during `clear` / `Clear-Host`.
+  - **CMD Process Safety**: Eliminated subprocess spawning during CMD shell startup and disabled default registry AutoRun hook to prevent recursive `cmd.exe` process explosion.
 - **`cpt --stdout` Fix & Exact Parity**: Fixed standard output streaming to ensure exact parity between clipboard and stdout capture results without mutating clipboard during stdout-only execution.
 - **Per-Terminal Isolation with Epochs**: Ensured that clearing Terminal A only increments Terminal A's epoch and never impacts Terminal B.
 - **Enhanced Diagnostics (`cpt doctor`)**: Added display of Command (`cpt`), Session ID, Current Epoch, and Boundary Tracking availability.

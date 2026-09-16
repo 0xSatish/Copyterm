@@ -209,9 +209,15 @@ def install_all_shell_hooks(data_dir: Path) -> List[Dict[str, Any]]:
             results.append({"shell": "PowerShell", "path": str(p), "ok": ok, "message": msg})
 
     # CMD (Windows)
+    # CMD AutoRun is intentionally disabled by default to prevent recursive cmd.exe process spawning.
+    # CMD users use cpt / copyterm directly via PATH (%USERPROFILE%\.copyterm\bin).
     if sys.platform == "win32":
-        ok_cmd, msg_cmd = install_cmd_autorun(data_dir)
-        results.append({"shell": "CMD", "path": "HKCU\\Software\\Microsoft\\Command Processor\\AutoRun", "ok": ok_cmd, "message": msg_cmd})
+        results.append({
+            "shell": "CMD",
+            "path": "HKCU\\Software\\Microsoft\\Command Processor\\AutoRun",
+            "ok": True,
+            "message": "CMD direct PATH integration active (AutoRun disabled for safety)"
+        })
 
     # Bash
     if sys.platform != "win32" or (Path.home() / ".bashrc").exists():

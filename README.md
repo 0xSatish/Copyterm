@@ -347,7 +347,7 @@ When running inside **Antigravity IDE** or **VS Code**, CopyTerm activates its *
 | Environment / Shell | Platform | Capture Tier | Status |
 | :--- | :--- | :--- | :--- |
 | **PowerShell (5.1 & Core 7+)** | Windows / Linux / macOS | Tier 1 (IDE) / Tier 4 (Shell Hook) | ✅ Verified |
-| **Command Prompt (CMD)** | Windows | Tier 1 (IDE) / Tier 4 (AutoRun Hook) | ✅ Verified |
+| **Command Prompt (CMD)** | Windows | Tier 1 (IDE) / Tier 4 (Console API / PATH Wrapper) | ✅ Verified |
 | **Antigravity IDE** | Windows / Linux / macOS | Tier 1 (IDE Terminal Bridge) | ✅ Verified |
 | **VS Code** | Windows / Linux / macOS | Tier 1 (IDE Terminal Bridge) | ✅ Verified |
 | **Bash** | Linux / macOS / WSL | Tier 1 (IDE) / Tier 4 (PROMPT_COMMAND) | ✅ Implemented |
@@ -455,7 +455,7 @@ Runtime state:          C:\Users\<user>\.copyterm
 
 1. Run `cpt doctor` to see diagnostic information about your shell integration.
 2. Ensure you have restarted your terminal after running `copyterm install` or `.\install.ps1`.
-3. In CMD, ensure AutoRun is permitted by system security policy.
+3. In CMD, run `cpt` or `copyterm` directly from PATH (%USERPROFILE%\.copyterm\bin).
 
 ### IDE Bridge not responding
 
@@ -477,7 +477,7 @@ Copyterm/
 │   └── copyterm.py             # Python zero-dependency engine
 ├── installer/                  # Cross-platform Python installer package
 │   ├── configure_path.py       # Idempotent PATH management
-│   ├── configure_shell.py      # Profile hooks (PowerShell, CMD AutoRun, Bash, Zsh)
+│   ├── configure_shell.py      # Profile hooks (PowerShell, Bash, Zsh)
 │   ├── install_windows.py      # Windows installation backend
 │   ├── install_linux.py        # Linux installation backend
 │   └── install_macos.py        # macOS installation backend

@@ -234,21 +234,7 @@ if (Test-Path `$__copyterm_ps1) { . `$__copyterm_ps1 }
         }
     }
 
-    # Configure CMD AutoRun
-    try {
-        $regKey = "HKCU:\Software\Microsoft\Command Processor"
-        $initCmdPath = Join-Path $integrationsDir "cmd\copyterm_init.cmd"
-        $cmdSnippet = "if exist `"$initCmdPath`" call `"$initCmdPath`""
-        if (-not (Test-Path $regKey)) {
-            New-Item -Path $regKey -Force | Out-Null
-        }
-        $currentAutoRun = (Get-ItemProperty -Path $regKey -Name "AutoRun" -ErrorAction SilentlyContinue).AutoRun
-        if ($currentAutoRun -notmatch "copyterm_init\.cmd") {
-            $newAutoRun = if ($currentAutoRun) { "$currentAutoRun & $cmdSnippet" } else { $cmdSnippet }
-            Set-ItemProperty -Path $regKey -Name "AutoRun" -Value $newAutoRun -Type String -Force
-        }
-    } catch {}
-
+    # CMD AutoRun is intentionally omitted for safety (CMD commands run directly via PATH)
     Write-Step 3 "Installing shell hooks" "OK"
 } catch {
     Write-Step 3 "Installing shell hooks" "FAIL"
