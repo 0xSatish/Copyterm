@@ -1,0 +1,29 @@
+{
+  "name": "copyterm-terminal-bridge",
+  "displayName": "CopyTerm Terminal Bridge",
+  "description": "Production IDE Bridge connecting CopyTerm CLI to xterm.js terminal buffers with true retroactive scrollback.",
+  "version": "1.0.0",
+  "publisher": "copyterm",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "copyterm.captureTerminal",
+        "title": "CopyTerm: Capture Active Terminal Buffer"
+      },
+      {
+        "command": "copyterm.doctor",
+        "title": "CopyTerm: Bridge Diagnostics"
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "antigravity-terminal-poc",
+  "displayName": "Antigravity Terminal POC",
+  "description": "Proof of Concept for Terminal Buffer Access in Antigravity IDE",
+  "version": "0.0.1",
+  "publisher": "copyterm",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:copyterm.testTerminalBuffer"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "copyterm.testTerminalBuffer",
+        "title": "CopyTerm: Test Terminal Buffer"
+      }
+    ]
+  }
+}

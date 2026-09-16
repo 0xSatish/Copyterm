@@ -7,20 +7,21 @@
 namespace copyterm::cli {
 
 namespace {
-const char* COPYTERM_VERSION = "1.0.0";
+const char* COPYTERM_VERSION = "1.1.0";
 }
 
 void CliParser::print_version() {
-    std::cout << "copyterm version " << COPYTERM_VERSION << " (cross-platform terminal session capture)\n";
+    std::cout << "cpt (CopyTerm) version " << COPYTERM_VERSION << " (cross-platform terminal session capture)\n";
 }
 
 void CliParser::print_help(const char* prog_name) {
     std::cout << R"(
-COPYTERM — End-to-End Cross-Platform Terminal Session Capture Utility
+COPYTERM (cpt) — End-to-End Cross-Platform Terminal Session Capture Utility
 
 USAGE:
+    cpt [OPTIONS]
+    cpt <SUBCOMMAND> [OPTIONS]
     copyterm [OPTIONS]
-    copyterm <SUBCOMMAND> [OPTIONS]
 
 DESCRIPTION:
     Copies the useful terminal session output for the CURRENT terminal

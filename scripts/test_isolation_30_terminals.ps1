@@ -7,10 +7,8 @@ Write-Host "============================================================" -Foreg
 Write-Host "   COPYTERM 30 CONCURRENT TERMINAL ISOLATION INTEGRATION TEST" -ForegroundColor Cyan
 Write-Host "============================================================`n" -ForegroundColor Cyan
 
-$copytermBin = Join-Path (Get-Location).Path "copyterm.exe"
-if (-not (Test-Path $copytermBin)) {
-    Write-Error "copyterm.exe not found. Build first with scripts/build.ps1"
-}
+$repoRoot = if ($PSScriptRoot) { (Resolve-Path "$PSScriptRoot\..").Path } else { (Get-Location).Path }
+$copytermPy = Join-Path $repoRoot "src\copyterm.py"
 
 $numTerminals = 30
 $sessions = @()
@@ -50,7 +48,7 @@ for ($i = 1; $i -le $numTerminals; $i++) {
     $current = $sessions[$i - 1]
     
     # Execute copyterm with --stdout --session-id to retrieve captured content as string
-    $output = (& $copytermBin --stdout --session-id $current.SessionId | Out-String)
+    $output = (python $copytermPy --stdout --session-id $current.SessionId | Out-String)
 
     # 1. Verify current session has its own unique token
     if ($output -notmatch "\b$($current.Token)\b") {

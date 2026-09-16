@@ -1,22 +1,27 @@
 # Windows Terminal Tabs Simulation Test
 $ErrorActionPreference = "Stop"
 
+$repoRoot = if ($PSScriptRoot) { (Resolve-Path "$PSScriptRoot\..").Path } else { (Get-Location).Path }
+$installedPs1 = Join-Path $env:USERPROFILE ".copyterm\integrations\powershell\copyterm.ps1"
+$ps1Path = if (Test-Path $installedPs1) { $installedPs1 } else { Join-Path $repoRoot "integrations\powershell\copyterm.ps1" }
+$pyPath = Join-Path $repoRoot "src\copyterm.py"
+
 $tab1Script = @"
-. "C:\Users\satis\OneDrive\Desktop\Copyterm\integrations\powershell\copyterm.ps1"
+. "$ps1Path"
 Write-Output "TAB_1_EXCLUSIVE_OUTPUT"
-python "C:\Users\satis\OneDrive\Desktop\Copyterm\src\copyterm.py" --stdout
+python "$pyPath" --stdout
 "@
 
 $tab2Script = @"
-. "C:\Users\satis\OneDrive\Desktop\Copyterm\integrations\powershell\copyterm.ps1"
+. "$ps1Path"
 Write-Output "TAB_2_EXCLUSIVE_OUTPUT"
-python "C:\Users\satis\OneDrive\Desktop\Copyterm\src\copyterm.py" --stdout
+python "$pyPath" --stdout
 "@
 
 $tab3Script = @"
-. "C:\Users\satis\OneDrive\Desktop\Copyterm\integrations\powershell\copyterm.ps1"
+. "$ps1Path"
 Write-Output "TAB_3_EXCLUSIVE_OUTPUT"
-python "C:\Users\satis\OneDrive\Desktop\Copyterm\src\copyterm.py" --stdout
+python "$pyPath" --stdout
 "@
 
 $out1 = (powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $tab1Script | Out-String)

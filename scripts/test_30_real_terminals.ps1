@@ -13,14 +13,20 @@ Write-Host "Spawning $numTerms REAL independent powershell.exe processes in para
 # Use PowerShell background jobs or runspaces to spawn 30 real independent powershell.exe processes
 $jobs = @()
 
+$repoRoot = if ($PSScriptRoot) { (Resolve-Path "$PSScriptRoot\..").Path } else { (Get-Location).Path }
+$installedPs1 = Join-Path $env:USERPROFILE ".copyterm\integrations\powershell\copyterm.ps1"
+$ps1Path = if (Test-Path $installedPs1) { $installedPs1 } else { Join-Path $repoRoot "integrations\powershell\copyterm.ps1" }
+$installedPy = Join-Path $env:USERPROFILE ".copyterm\bin\copyterm.py"
+$pyScript = if (Test-Path $installedPy) { $installedPy } else { Join-Path $repoRoot "src\copyterm.py" }
+
 for ($i = 1; $i -le $numTerms; $i++) {
     $idx = $i.ToString('00')
     $marker = "REAL_TERMINAL_$idx"
     $script = @"
-. "C:\Users\satis\OneDrive\Desktop\Copyterm\integrations\powershell\copyterm.ps1"
+. "$ps1Path"
 Write-Output "$marker"
 Write-Output "Executing command in real process $idx"
-python "C:\Users\satis\OneDrive\Desktop\Copyterm\src\copyterm.py" --stdout
+python "$pyScript" --stdout
 "@
 
     $sb = [ScriptBlock]::Create("powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$script'")

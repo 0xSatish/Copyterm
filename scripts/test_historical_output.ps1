@@ -5,13 +5,19 @@ Write-Output "BEFORE_COPYTERM_TEST"
 Write-Output "COMMAND_BEFORE_CAPTURE_1"
 Write-Output "COMMAND_BEFORE_CAPTURE_2"
 
+$repoRoot = if ($PSScriptRoot) { (Resolve-Path "$PSScriptRoot\..").Path } else { (Get-Location).Path }
+$installedPs1 = Join-Path $env:USERPROFILE ".copyterm\integrations\powershell\copyterm.ps1"
+$ps1Path = if (Test-Path $installedPs1) { $installedPs1 } else { Join-Path $repoRoot "integrations\powershell\copyterm.ps1" }
+$installedPy = Join-Path $env:USERPROFILE ".copyterm\bin\copyterm.py"
+$pyScript = if (Test-Path $installedPy) { $installedPy } else { Join-Path $repoRoot "src\copyterm.py" }
+
 Write-Host "`n[Action] Initializing copyterm integration now...`n"
-. "C:\Users\satis\OneDrive\Desktop\Copyterm\integrations\powershell\copyterm.ps1"
+. "$ps1Path"
 
 Write-Output "AFTER_COPYTERM_TEST"
 
 Write-Host "`n=== RESULT OF copyterm --stdout ==="
-$output = (& python "C:\Users\satis\OneDrive\Desktop\Copyterm\src\copyterm.py" --stdout | Out-String)
+$output = (& python "$pyScript" --stdout | Out-String)
 Write-Host $output
 Write-Host "==================================="
 

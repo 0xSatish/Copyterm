@@ -43,5 +43,8 @@ $testFiles = @(
 $testCmd = "clang++ -std=c++17 $optFlag -Isrc $($testFiles -join ' ') $($srcFiles -join ' ') -o copyterm_tests.exe -luser32 -lkernel32 -ladvapi32"
 Invoke-Expression $testCmd
 
+# Create cpt.exe alias binary
+Copy-Item -Path "copyterm.exe" -Destination "cpt.exe" -Force
+
 Write-Host "`nBuild complete successfully!" -ForegroundColor Green
-Write-Host "  -> Binaries: copyterm.exe, copyterm_tests.exe" -ForegroundColor Green
+Write-Host "  -> Binaries: cpt.exe, copyterm.exe, copyterm_tests.exe" -ForegroundColor Green

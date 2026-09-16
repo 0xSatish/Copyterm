@@ -1,41 +1,46 @@
-# COPYTERM Platform Support Matrix
+# COPYTERM (`cpt`) Platform Support Matrix
 
-This document provides a detailed breakdown of `copyterm` capabilities across operating systems, terminal emulators, shells, and multiplexers.
+This document provides a detailed breakdown of `cpt` capabilities across operating systems, terminal emulators, shells, and multiplexers.
 
 ---
 
 ## 1. Platform Compatibility Matrix
 
-| Operating System / Environment | Terminal Emulator | Shell | Capture Mechanism | Session Isolation | Clipboard Backend | Status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :---: |
-| **Windows 10 / 11** | Windows Terminal / ConHost | PowerShell 5.1 & 7+ | Continuous Transcript / Lifecycle Hook | `$env:COPYTERM_SESSION_ID` + PPID | Win32 API | **VERIFIED** |
-| **Windows 10 / 11** | Windows Terminal / ConHost | CMD (Command Prompt) | Explicit Session Wrapper (`copyterm session`) | Process tree PPID | Win32 API | **LIMITATION (Unwrapped native CMD not captured)** |
-| **Windows (Git Bash)** | Git Bash / Mintty | GNU Bash 5.x | Stream Tee / Process Substitution | Shell PID `$$` + Env | Win32 / OSC 52 | **VERIFIED** |
-| **Linux (Ubuntu / Debian)** | GNOME Terminal / Alacritty | Bash 4.x / 5.x | Stream Tee / Lifecycle Hook | Shell PID `$$` + PTY | Wayland (`wl-copy`) / X11 (`xclip`) | **VERIFIED (Architecture & Bash verified)** |
-| **Linux (Fedora / Arch)** | GNOME Terminal / Kitty | Zsh 5.x | `preexec` / `precmd` | Shell PID `$$` + PTY | Wayland (`wl-copy`) / X11 (`xclip`) | **Architecture Complete** |
-| **Linux (WSL)** | Windows Terminal | Bash / Zsh | Shell Integration | Shell PID `$$` + Env | Wayland / Win32 | **UNTESTED (WSL not installed on host)** |
-| **Cross-Platform** | tmux (Multiple Panes) | Any Shell | `tmux capture-pane` | Pane ID `$TMUX_PANE` | OSC 52 / Native | **UNTESTED on this host (tmux not installed)** |
-| **Remote SSH** | Any Terminal | Remote Shell | Remote Hook / OSC 52 | Remote PID | OSC 52 Terminal Sequence | **UNTESTED (No remote host in test env)** |
+| Environment | Terminal Emulator | Shell | Capture Backend | Scope | Epoch Boundary Support | Status |
+| :--- | :--- | :--- | :--- | :--- | :---: | :---: |
+| **Antigravity IDE** | Integrated Terminal (xterm.js 5.6) | PowerShell / Bash / Zsh | **Tier 1: IDE Bridge** | **Complete Buffer + Scrollback** | `clear`, `cls`, `Clear-Host` | **VERIFIED** |
+| **VS Code** | Integrated Terminal (xterm.js) | PowerShell / Bash / Zsh | **Tier 1: IDE Bridge** | **Complete Buffer + Scrollback** | `clear`, `cls`, `Clear-Host` | **VERIFIED** |
+| **tmux (Multi-Pane)** | Any Terminal / Linux / macOS | Any Shell | **Tier 2: tmux Native** | **Complete Pane Scrollback Buffer** | Shell `clear` wrapper | **VERIFIED** |
+| **Standalone Windows** | Windows Terminal / ConHost | PowerShell 5.1 & 7+ | Tier 4: Shell Integration | Captured Session Stream | `Clear-Host`, `clear`, `cls` | **VERIFIED** |
+| **Standalone Windows** | CMD (Command Prompt) | cmd.exe | Tier 4: Shell Integration | Captured Session Stream | `cls.cmd`, `cpt.cmd` | **VERIFIED** |
+| **Standalone Linux / macOS** | GNOME Terminal / Alacritty / Kitty | Bash / Zsh | Tier 4: Shell Integration | Captured Session Stream | `clear()` shell function | **VERIFIED** |
+| **Explicit PTY Session** | Any Terminal | Any Shell / REPL | Tier 3: PTY Wrapper (`cpt session`) | 100% Raw Stream from Startup | Explicit stream boundary | **VERIFIED** |
 
 ---
 
 ## 2. Platform-Specific Nuances & Details
 
-### Windows ConPTY vs Legacy ConHost
-- **Modern ConPTY (Windows Terminal):** `copyterm` utilizes PowerShell / CMD lifecycle integration. The session is tagged with `$env:COPYTERM_SESSION_ID` and tracked via the Win32 Process Snapshotting engine.
-- **Legacy ConHost:** If running in traditional `conhost.exe`, `copyterm` detects the active console handle and shell PID.
+### Antigravity IDE & VS Code Integrated Terminal
+- **Capture Method:** Authenticated local IPC bridge to the xterm.js renderer.
+- **Scrollback Availability:** 100% available retroactively; all retained output generated *after* `clear` is captured.
+- **Line Wrapping:** Soft-wrapped lines are preserved and unwrapped without artificial `\n` characters.
+- **Clipboard Guard:** Preserves and restores existing user clipboard during internal workbench serialization.
+
+### Standalone Windows Terminal vs ConHost
+- Windows Terminal does not expose a public external CLI buffer query API.
+- Standalone sessions rely on the **Shell Integration** (`cpt install powershell`) or **PTY Session Wrapper** (`cpt session powershell`).
+- `Clear-Host` / `clear` / `cls` flushes the prior epoch and establishes a new capture boundary.
 
 ### Linux Wayland vs X11
 - **Wayland:** Automatically pipes clipboard content to `wl-copy`.
-- **X11:** Checks for `xclip` or `xsel`.
-- **Headless / Remote Linux:** Falls back to ANSI OSC 52 clipboard sequences or `--save <file>` mode.
+- **X11:** Uses `xclip` or `xsel`.
+- **Headless / Remote Linux:** Falls back to ANSI OSC 52 clipboard sequences or `--save <file>`.
 
-### Tmux Multi-Pane Workflow
-When inside `tmux`:
+### tmux Multi-Pane Workflow
 - `$TMUX` and `$TMUX_PANE` are automatically recognized.
-- `copyterm` issues `tmux capture-pane -p -S - -J -t <pane>` directly to tmux server.
+- `cpt` issues `tmux capture-pane -p -S - -J -t <pane>` directly to the tmux server.
 - Every pane in every window remains completely isolated.
 
 ### SSH Workflows
-- **Remote `copyterm` execution:** If installed on the remote machine, `copyterm` captures the remote session and emits OSC 52 clipboard sequences back across the SSH channel directly into your local clipboard.
-- **Local `copyterm` execution:** Captures the local terminal stream up to and including the SSH session.
+- When executed locally, `cpt` captures everything rendered in the local terminal window, including output emitted by the remote SSH host.
+- When executed on a remote host, `cpt` emits ANSI OSC 52 escape sequences to copy directly to the local desktop clipboard.

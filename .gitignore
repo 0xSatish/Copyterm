@@ -1,19 +1,78 @@
-# Build outputs
-build/
-*.exe
-*.obj
+# ==============================================================================
+# CopyTerm — .gitignore
+# ==============================================================================
+
+# Python build & bytecode artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# C / C++ Compiled Binaries & Object Files
 *.o
+*.obj
 *.a
 *.lib
 *.dll
+*.so
+*.dylib
+*.exp
 *.pdb
+*.ilk
+*.idb
+*.ipdb
+*.iobj
+*.res
+*.tlog
+*.lastbuildstate
+Debug/
+Release/
+x64/
+x86/
+/build/
+*.exe
 *.d
-CMakeSettings.json
 
-# Local test & session files
+# CMake & IDE Configurations
+CMakeCache.txt
+CMakeFiles/
+CMakeSettings.json
+.vscode/
+.idea/
+*.swp
+*.bak
+*~
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# CopyTerm Runtime, Local Sessions & Test Output Dumps
 .copyterm/
+sessions/
 *.buf
 *.meta
 *.bak.*
+capture.txt
 test_session.txt
 test_save.txt
+*.log
+*.tmp
+*.temp
+scratch/

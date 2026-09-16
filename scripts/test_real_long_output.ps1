@@ -1,13 +1,14 @@
 # Real Long Output Test
 $ErrorActionPreference = "Continue"
 
-. "C:\Users\satis\OneDrive\Desktop\Copyterm\integrations\powershell\copyterm.ps1"
+$repoRoot = if ($PSScriptRoot) { (Resolve-Path "$PSScriptRoot\..").Path } else { (Get-Location).Path }
+. (Join-Path $repoRoot "integrations\powershell\copyterm.ps1")
 
 Write-Host "Emitting 1,000 lines..."
 1..1000 | ForEach-Object { "REAL_LINE_$_" }
 
 Write-Host "`nQuerying copyterm --stdout..."
-$captured = (& python "C:\Users\satis\OneDrive\Desktop\Copyterm\src\copyterm.py" --stdout | Out-String)
+$captured = (& python (Join-Path $repoRoot "src\copyterm.py") --stdout | Out-String)
 
 $hasLine1 = $captured -match "\bREAL_LINE_1\b"
 $hasLine500 = $captured -match "\bREAL_LINE_500\b"

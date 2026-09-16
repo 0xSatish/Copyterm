@@ -9,103 +9,37 @@
 namespace copyterm::installer {
 
 namespace {
-const char* MARKER_START = "# >>> copyterm shell integration >>>";
-const char* MARKER_END   = "# <<< copyterm shell integration <<<";
-const char* CMD_MARKER_START = ":: >>> copyterm shell integration >>>";
-const char* CMD_MARKER_END   = ":: <<< copyterm shell integration <<<";
+const char* MARKER_START = "# >>> CopyTerm managed block >>>";
+const char* MARKER_END   = "# <<< CopyTerm managed block <<<";
+const char* CMD_MARKER_START = ":: >>> CopyTerm managed block >>>";
+const char* CMD_MARKER_END   = ":: <<< CopyTerm managed block <<<";
 
 std::string get_powershell_hook() {
     return std::string(MARKER_START) + "\n"
-        "# copyterm PowerShell Integration\n"
-        "if (-not $env:COPYTERM_SESSION_ID) {\n"
-        "    $env:COPYTERM_SESSION_ID = \"sess_\" + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + \"_$PID_\" + ([System.Guid]::NewGuid().ToString(\"N\").Substring(0, 6))\n"
-        "}\n"
-        "$global:__copyterm_session_file = [System.IO.Path]::Combine($env:USERPROFILE, \".copyterm\", \"sessions\", \"$($env:COPYTERM_SESSION_ID).buf\")\n"
-        "$null = [System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($global:__copyterm_session_file))\n"
-        "\n"
-        "function global:__copyterm_record_command($cmd) {\n"
-        "    if ([string]::IsNullOrWhiteSpace($cmd)) { return }\n"
-        "    $ts = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()\n"
-        "    $cwd = (Get-Location).Path\n"
-        "    $entry = \"`n`e]133;C;cmd=$cmd;cwd=$cwd;ts=$ts`a`n`$ $cmd`n\"\n"
-        "    [System.IO.File]::AppendAllText($global:__copyterm_session_file, $entry)\n"
-        "}\n"
-        "\n"
-        "# Hook prompt\n"
-        "if (Test-Path Function:\\prompt) {\n"
-        "    $global:__copyterm_old_prompt = $Function:prompt\n"
-        "} else {\n"
-        "    $global:__copyterm_old_prompt = { \"PS $($executionContext.SessionState.Path.CurrentLocation)$('>' * ($nestedPromptLevel + 1)) \" }\n"
-        "}\n"
-        "function global:prompt {\n"
-        "    $lastHistory = Get-History -Count 1 -ErrorAction SilentlyContinue\n"
-        "    if ($lastHistory -and ($global:__copyterm_last_id -ne $lastHistory.Id)) {\n"
-        "        $global:__copyterm_last_id = $lastHistory.Id\n"
-        "        global:__copyterm_record_command $lastHistory.CommandLine\n"
-        "    }\n"
-        "    & $global:__copyterm_old_prompt\n"
-        "}\n"
+        "$__copyterm_ps1 = [System.IO.Path]::Combine($env:USERPROFILE, \".copyterm\", \"integrations\", \"powershell\", \"copyterm.ps1\")\n"
+        "if (Test-Path $__copyterm_ps1) { . $__copyterm_ps1 }\n"
         + MARKER_END + "\n";
 }
 
 std::string get_bash_hook() {
     return std::string(MARKER_START) + "\n"
-        "# copyterm Bash Integration\n"
-        "if [ -z \"$COPYTERM_SESSION_ID\" ]; then\n"
-        "    export COPYTERM_SESSION_ID=\"sess_$(date +%s%3N)_${$}_$(head /dev/urandom | tr -dc a-f0-9 | head -c 6)\"\n"
-        "fi\n"
-        "__copyterm_dir=\"${COPYTERM_DATA_DIR:-$HOME/.copyterm}/sessions\"\n"
-        "mkdir -p \"$__copyterm_dir\" 2>/dev/null\n"
-        "__copyterm_file=\"$__copyterm_dir/${COPYTERM_SESSION_ID}.buf\"\n"
-        "\n"
-        "__copyterm_preexec() {\n"
-        "    local cmd=\"$1\"\n"
-        "    [ -z \"$cmd\" ] && return\n"
-        "    local ts=$(date +%s%3N 2>/dev/null || date +%s)\n"
-        "    printf \"\\n\\033]133;C;cmd=%%s;cwd=%%s;ts=%%s\\007\\n$ %%s\\n\" \"$cmd\" \"$PWD\" \"$ts\" \"$cmd\" >> \"$__copyterm_file\" 2>/dev/null\n"
-        "}\n"
-        "\n"
-        "__copyterm_prompt_command() {\n"
-        "    local last_exit=\"$?\"\n"
-        "    local last_cmd=\"$(history 1 | sed 's/^[ ]*[0-9]*[ ]*//')\"\n"
-        "    if [ \"$last_cmd\" != \"$__copyterm_last_cmd\" ] && [ -n \"$last_cmd\" ]; then\n"
-        "        __copyterm_last_cmd=\"$last_cmd\"\n"
-        "        __copyterm_preexec \"$last_cmd\"\n"
-        "    fi\n"
-        "}\n"
-        "if [[ ! \"$PROMPT_COMMAND\" =~ __copyterm_prompt_command ]]; then\n"
-        "    PROMPT_COMMAND=\"__copyterm_prompt_command;${PROMPT_COMMAND:-}\"\n"
-        "fi\n"
+        "export PATH=\"$HOME/.copyterm/bin:$PATH\"\n"
+        "__copyterm_bash=\"${COPYTERM_DATA_DIR:-$HOME/.copyterm}/integrations/bash/copyterm.bash\"\n"
+        "[ -f \"$__copyterm_bash\" ] && . \"$__copyterm_bash\"\n"
         + MARKER_END + "\n";
 }
 
 std::string get_zsh_hook() {
     return std::string(MARKER_START) + "\n"
-        "# copyterm Zsh Integration\n"
-        "if [ -z \"$COPYTERM_SESSION_ID\" ]; then\n"
-        "    export COPYTERM_SESSION_ID=\"sess_$(date +%s%3N)_${$}_$(head /dev/urandom | tr -dc a-f0-9 | head -c 6)\"\n"
-        "fi\n"
-        "__copyterm_dir=\"${COPYTERM_DATA_DIR:-$HOME/.copyterm}/sessions\"\n"
-        "mkdir -p \"$__copyterm_dir\" 2>/dev/null\n"
-        "__copyterm_file=\"$__copyterm_dir/${COPYTERM_SESSION_ID}.buf\"\n"
-        "\n"
-        "__copyterm_preexec() {\n"
-        "    local cmd=\"$1\"\n"
-        "    [ -z \"$cmd\" ] && return\n"
-        "    local ts=$(date +%s%3N 2>/dev/null || date +%s)\n"
-        "    printf \"\\n\\033]133;C;cmd=%%s;cwd=%%s;ts=%%s\\007\\n$ %%s\\n\" \"$cmd\" \"$PWD\" \"$ts\" \"$cmd\" >> \"$__copyterm_file\" 2>/dev/null\n"
-        "}\n"
-        "autoload -Uz add-zsh-hook 2>/dev/null\n"
-        "if (( $+functions[add-zsh-hook] )); then\n"
-        "    add-zsh-hook preexec __copyterm_preexec\n"
-        "fi\n"
+        "export PATH=\"$HOME/.copyterm/bin:$PATH\"\n"
+        "__copyterm_zsh=\"${COPYTERM_DATA_DIR:-$HOME/.copyterm}/integrations/zsh/copyterm.zsh\"\n"
+        "[ -f \"$__copyterm_zsh\" ] && . \"$__copyterm_zsh\"\n"
         + MARKER_END + "\n";
 }
 
 std::string get_cmd_hook() {
     return std::string(CMD_MARKER_START) + "\n"
         "@echo off\n"
-        ":: copyterm CMD integration\n"
         "if \"%COPYTERM_SESSION_ID%\"==\"\" (\n"
         "    set \"COPYTERM_SESSION_ID=sess_%RANDOM%_%RANDOM%\"\n"
         ")\n"
@@ -155,8 +89,13 @@ std::vector<std::filesystem::path> ShellInstaller::get_profile_paths(ShellType s
         if (userprofile) {
             // Windows PowerShell 5.1
             paths.push_back(std::filesystem::path(*userprofile) / "Documents" / "WindowsPowerShell" / "Microsoft.PowerShell_profile.ps1");
+            paths.push_back(std::filesystem::path(*userprofile) / "Documents" / "WindowsPowerShell" / "profile.ps1");
             // PowerShell 7+
             paths.push_back(std::filesystem::path(*userprofile) / "Documents" / "PowerShell" / "Microsoft.PowerShell_profile.ps1");
+            paths.push_back(std::filesystem::path(*userprofile) / "Documents" / "PowerShell" / "profile.ps1");
+            // OneDrive redirected Documents
+            paths.push_back(std::filesystem::path(*userprofile) / "OneDrive" / "Documents" / "WindowsPowerShell" / "Microsoft.PowerShell_profile.ps1");
+            paths.push_back(std::filesystem::path(*userprofile) / "OneDrive" / "Documents" / "PowerShell" / "Microsoft.PowerShell_profile.ps1");
         }
 #else
         auto home = platform::Environment::get_env("HOME");
@@ -171,11 +110,13 @@ std::vector<std::filesystem::path> ShellInstaller::get_profile_paths(ShellType s
         auto userprofile = platform::Environment::get_env("USERPROFILE");
         if (userprofile) {
             paths.push_back(std::filesystem::path(*userprofile) / ".bashrc");
+            paths.push_back(std::filesystem::path(*userprofile) / ".bash_profile");
         }
 #else
         auto home = platform::Environment::get_env("HOME");
         if (home) {
             paths.push_back(std::filesystem::path(*home) / ".bashrc");
+            paths.push_back(std::filesystem::path(*home) / ".bash_profile");
         }
 #endif
     }

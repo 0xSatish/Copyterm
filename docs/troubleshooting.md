@@ -1,67 +1,85 @@
-# COPYTERM Troubleshooting Guide
+# COPYTERM (`cpt`) Troubleshooting Guide
 
-This guide covers common issues, diagnostic steps, and resolutions.
+This guide covers common issues, diagnostic steps, and resolutions for `cpt`.
 
 ---
 
-## 1. Diagnostics First: `copyterm doctor`
+## 1. Diagnostics First: `cpt doctor`
 
 Whenever you encounter unexpected behavior, run:
 ```bash
-copyterm doctor
+cpt doctor
 ```
 This prints a comprehensive report of:
+- Command: `cpt` (alias: `copyterm`)
 - Current OS and detected shell
-- Parent process PID and terminal emulator
+- Parent process PID and process ancestors
+- Current Session ID and Capture Epoch
+- Boundary Tracking availability
+- IDE Terminal Bridge status (Connected, Protocol version, Historical scrollback)
+- tmux session status
 - Clipboard backend status (AVAILABLE or UNAVAILABLE)
-- Resolved session ID and capture buffer size
-- Total active sessions count on disk
+
+For live buffer capture testing:
+```bash
+cpt doctor --bridge-test
+```
 
 ---
 
 ## 2. Common Issues & Solutions
 
-### Issue A: `No active capture session detected for this terminal`
-**Cause:** The shell instance was started without `copyterm` integration installed, or the shell profile was not reloaded after installation.  
+### Issue A: `Historical scrollback: UNAVAILABLE` in Antigravity / VS Code
+**Cause:** The CopyTerm IDE Bridge extension is not installed or the extension host has not loaded it.  
 **Resolution:**
-1. Run `copyterm install` (or `copyterm install powershell` / `copyterm install bash`).
-2. Reload your profile or open a new terminal:
-   - PowerShell: `. $PROFILE`
+1. Run:
+   ```bash
+   cpt install ide
+   ```
+2. Reload your IDE window (Press `Ctrl+Shift+P` -> `Developer: Reload Window`).
+3. Run `cpt doctor` to verify:
+   ```text
+   [IDE Terminal Bridge]
+     Detected:                 YES
+     IDE:                      Antigravity
+     Terminal Implementation:  xterm.js
+     Bridge Status:            CONNECTED (Ping OK)
+     Historical Scrollback:    AVAILABLE
+     Boundary Tracking:        AVAILABLE
+   ```
+
+---
+
+### Issue B: `clear` was run but old history was still captured
+**Cause:** The shell session was launched before the updated integration script was sourced.  
+**Resolution:**
+1. Reload your shell profile or open a new terminal:
+   - PowerShell: `. $PROFILE` or `. .\integrations\powershell\copyterm.ps1`
    - Bash: `source ~/.bashrc`
    - Zsh: `source ~/.zshrc`
-3. Verify that `$env:COPYTERM_SESSION_ID` (PowerShell) or `$COPYTERM_SESSION_ID` (Bash/Zsh) is populated.
+2. Run `cpt doctor` to verify that `Current Epoch` increments after typing `clear` or `cls`.
 
 ---
 
-### Issue B: `Clipboard error: No supported clipboard tool found` (Linux)
-**Cause:** Linux systems running minimal window managers or headless servers may lack clipboard utilities.  
+### Issue C: `cpt --stdout` produces no output
+**Cause:** 
+1. If `clear` was run immediately before `cpt` with no intervening output, the current epoch is legitimately empty (0 lines).
+2. If using PowerShell pipeline redirection, ensure you use `cpt --stdout > capture.txt` or `cpt --stdout | Out-String`.
+
+---
+
+### Issue D: `Clipboard error: No supported clipboard tool found` (Linux)
+**Cause:** Minimal Linux window managers or headless servers may lack clipboard utilities.  
 **Resolution:**
-- On Wayland: Install `wl-clipboard` (`sudo apt install wl-clipboard` or `sudo dnf install wl-clipboard`).
+- On Wayland: Install `wl-clipboard` (`sudo apt install wl-clipboard`).
 - On X11: Install `xclip` or `xsel` (`sudo apt install xclip`).
-- Alternatively, use file mode: `copyterm -s session.txt` or pipe: `copyterm --stdout > output.txt`.
+- Alternatively, use stdout or save mode: `cpt --stdout > output.txt` or `cpt -s session.txt`.
 
 ---
 
-### Issue C: Output contains unexpected progress bar fragments
-**Cause:** Raw mode was used on tools that emit carriage returns (`\r`).  
+### Issue E: Clean Uninstallation
 **Resolution:**
-- Run standard clean mode: `copyterm` (or `copyterm --clean`).
-- `copyterm`'s line simulation state machine collapses `\r` overwrite sequences into the final clean line.
-
----
-
-### Issue D: Historical output prior to shell startup is missing
-**Cause:** Standard terminal emulators (Windows Terminal, GNOME Terminal, Alacritty) do not permit child CLI processes to retroactively query historical scrollback generated before capture integration was active.  
-**Resolution:**
-- `copyterm` records continuously from the moment the shell is opened.
-- In `tmux`, full scrollback history is always available via `tmux capture-pane`.
-
----
-
-### Issue E: Reverting / Uninstalling Shell Integration
-**Resolution:**
-To cleanly remove all added hooks from your shell profiles without touching other settings:
+To cleanly remove all shell hooks and IDE extensions:
 ```bash
-copyterm uninstall
+cpt uninstall all
 ```
-Backup copies (`*.bak.<timestamp>`) are preserved in the same directory.

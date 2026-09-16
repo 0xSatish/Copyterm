@@ -6,12 +6,18 @@ Write-Host "Spawning 5 REAL independent PowerShell processes..." -ForegroundColo
 $numTerms = 5
 $results = @{}
 
+$repoRoot = if ($PSScriptRoot) { (Resolve-Path "$PSScriptRoot\..").Path } else { (Get-Location).Path }
+$installedPs1 = Join-Path $env:USERPROFILE ".copyterm\integrations\powershell\copyterm.ps1"
+$ps1Path = if (Test-Path $installedPs1) { $installedPs1 } else { Join-Path $repoRoot "integrations\powershell\copyterm.ps1" }
+$installedPy = Join-Path $env:USERPROFILE ".copyterm\bin\copyterm.py"
+$pyScript = if (Test-Path $installedPy) { $installedPy } else { Join-Path $repoRoot "src\copyterm.py" }
+
 for ($i = 1; $i -le $numTerms; $i++) {
     $marker = "REAL_SESSION_0$i"
     $script = @"
-. "C:\Users\satis\OneDrive\Desktop\Copyterm\integrations\powershell\copyterm.ps1"
+. "$ps1Path"
 Write-Output "$marker"
-python "C:\Users\satis\OneDrive\Desktop\Copyterm\src\copyterm.py" --stdout
+python "$pyScript" --stdout
 "@
 
     # Spawn actual independent powershell.exe process

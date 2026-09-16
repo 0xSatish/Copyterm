@@ -1,8 +1,8 @@
 # Real PowerShell Test Script
 $ErrorActionPreference = "Continue"
 
-Write-Host "=== STEP 1: Load copyterm PowerShell integration ==="
-. "C:\Users\satis\OneDrive\Desktop\Copyterm\integrations\powershell\copyterm.ps1"
+$repoRoot = if ($PSScriptRoot) { (Resolve-Path "$PSScriptRoot\..").Path } else { (Get-Location).Path }
+. (Join-Path $repoRoot "integrations\powershell\copyterm.ps1")
 
 Write-Host "`n=== STEP 2: Run Write-Output COPYTERM_REAL_TEST_001 ==="
 Write-Output "COPYTERM_REAL_TEST_001"

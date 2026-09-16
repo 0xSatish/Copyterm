@@ -13,12 +13,16 @@ $sessId = "sess_ansi_real_test"
 $bufFile = [System.IO.Path]::Combine($env:USERPROFILE, ".copyterm", "sessions", "$sessId.buf")
 [System.IO.File]::WriteAllBytes($bufFile, $rawBytes)
 
+$repoRoot = if ($PSScriptRoot) { (Resolve-Path "$PSScriptRoot\..").Path } else { (Get-Location).Path }
+$installedPy = Join-Path $env:USERPROFILE ".copyterm\bin\copyterm.py"
+$pyScript = if (Test-Path $installedPy) { $installedPy } else { Join-Path $repoRoot "src\copyterm.py" }
+
 Write-Host "=== TEST 1: copyterm --clean --stdout ==="
-$clean = (& python "C:\Users\satis\OneDrive\Desktop\Copyterm\src\copyterm.py" --session-id $sessId --clean --stdout | Out-String)
+$clean = (& python "$pyScript" --session-id $sessId --clean --stdout | Out-String)
 Write-Host "Clean output: $clean"
 
 Write-Host "=== TEST 2: copyterm --raw --stdout ==="
-$raw = (& python "C:\Users\satis\OneDrive\Desktop\Copyterm\src\copyterm.py" --session-id $sessId --raw --stdout | Out-String)
+$raw = (& python "$pyScript" --session-id $sessId --raw --stdout | Out-String)
 Write-Host "Raw output: $raw"
 
 Remove-Item $bufFile -Force

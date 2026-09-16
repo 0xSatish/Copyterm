@@ -6,6 +6,13 @@
 #include <algorithm>
 #include <cstring>
 
+#if defined(_WIN32) || defined(_WIN64)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 namespace copyterm::core {
 
 RingBuffer::RingBuffer(std::filesystem::path file_path, size_t max_size_bytes)
@@ -46,12 +53,37 @@ std::string RingBuffer::read_all() const {
         return "";
     }
 
+#if defined(_WIN32) || defined(_WIN64)
+    HANDLE hFile = CreateFileW(
+        file_path_.c_str(),
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        NULL,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL
+    );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return "";
+    }
+    LARGE_INTEGER size;
+    if (!GetFileSizeEx(hFile, &size) || size.QuadPart == 0) {
+        CloseHandle(hFile);
+        return "";
+    }
+    std::string result(static_cast<size_t>(size.QuadPart), '\0');
+    DWORD bytesRead = 0;
+    ReadFile(hFile, &result[0], static_cast<DWORD>(size.QuadPart), &bytesRead, NULL);
+    CloseHandle(hFile);
+    result.resize(bytesRead);
+    return result;
+#else
     std::ifstream in(file_path_, std::ios::in | std::ios::binary);
     if (!in.is_open()) {
         return "";
     }
-
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+#endif
 }
 
 std::string RingBuffer::read_last_lines(size_t n) const {
