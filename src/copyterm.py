@@ -520,18 +520,23 @@ class EpochManager:
         if epoch_id == 0:
             return raw_text
 
+        # Method 1: Exact byte offset slicing (for live continuous stream buffers / transcripts)
+        byte_offset = epoch_state.get("byte_offset", 0)
+        if byte_offset and byte_offset > 0:
+            raw_bytes = raw_text.encode('utf-8', errors='replace')
+            if byte_offset < len(raw_bytes):
+                return raw_bytes[byte_offset:].decode('utf-8', errors='replace').lstrip("\r\n")
+            else:
+                return ""
+
         token = epoch_state.get("latest_boundary_token", "")
-        
-        # Method 1: Exact boundary token match (for session transcripts & explicit PTY markers)
+        # Method 2: Exact boundary token match (for explicit boundary markers)
         if token and token in raw_text:
             idx = raw_text.rfind(token)
             return raw_text[idx + len(token):].lstrip("\r\n")
 
-        # Method 2: Shell prompt clear boundary slicing (for xterm.js / IDE buffer & terminal emulators)
-        # Slices everything after the prompt line where clear / cls / Clear-Host was invoked.
+        # Method 3: Shell prompt clear boundary slicing (for xterm.js / IDE buffer & terminal emulators)
         lines = raw_text.splitlines(keepends=True)
-        
-        # Prompt regex: Matches prompt prefixes followed strictly by clear / cls / Clear-Host command
         prompt_clear_re = re.compile(
             r'(?:PS\s+[^>\n]+>|[a-zA-Z0-9_.-]+@[^#$%>]+[#$%>]|[A-Z]:\\[^>\n]*>|^[>$#%]\s*)\s*(?:clear|cls|Clear-Host)\s*$',
             re.IGNORECASE
@@ -540,10 +545,7 @@ class EpochManager:
         match_indices = []
         for i, line in enumerate(lines):
             clean_line = Sanitizer.strip_ansi(line).strip()
-            # Do NOT match lines like: echo "clear" or printf "clear\n"
             if prompt_clear_re.search(clean_line):
-                match_indices.append(i)
-            elif clean_line.lower() in ("clear", "cls", "clear-host"):
                 match_indices.append(i)
 
         if match_indices:
@@ -552,20 +554,11 @@ class EpochManager:
             sliced_lines = lines[last_idx + 1:]
             return "".join(sliced_lines).lstrip("\r\n")
 
-        # Method 3: Line offset slicing (for transcript buffer files where commands were executed via script)
+        # Method 4: Line offset slicing
         line_offset = epoch_state.get("line_offset", 0)
         if line_offset and line_offset > 0:
             if line_offset < len(lines):
                 return "".join(lines[line_offset:]).lstrip("\r\n")
-            else:
-                return ""
-
-        # Method 4: Byte offset slicing
-        byte_offset = epoch_state.get("byte_offset", 0)
-        if byte_offset and byte_offset > 0:
-            raw_bytes = raw_text.encode('utf-8', errors='replace')
-            if byte_offset < len(raw_bytes):
-                return raw_bytes[byte_offset:].decode('utf-8', errors='replace').lstrip("\r\n")
             else:
                 return ""
 

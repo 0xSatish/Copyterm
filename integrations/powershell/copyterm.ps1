@@ -63,36 +63,19 @@ function global:Clear-Host {
     $global:__copyterm_epoch = [int]$global:__copyterm_epoch + 1
     $ts = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     
-    # Safely obtain current byte offset and line offset from .buf without exclusive locking
+    # Safely obtain current byte offset from .buf metadata without opening any file handle
     $byteOffset = [long]0
-    $lineOffset = [long]0
     try {
         if (Test-Path -LiteralPath $global:__copyterm_buf_file) {
             $fi = New-Object System.IO.FileInfo($global:__copyterm_buf_file)
             if ($fi.Exists) {
                 $byteOffset = $fi.Length
             }
-            # Count lines using non-exclusive Read + ReadWrite sharing
-            $fs = New-Object System.IO.FileStream($global:__copyterm_buf_file, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-            try {
-                $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
-                try {
-                    $cnt = 0
-                    while ($null -ne ($sr.ReadLine())) {
-                        $cnt++
-                    }
-                    $lineOffset = $cnt
-                } finally {
-                    $sr.Close()
-                }
-            } finally {
-                $fs.Close()
-            }
         }
     } catch {}
 
     $epochJson = @"
-{"session_id":"$($env:COPYTERM_SESSION_ID)","epoch_id":$($global:__copyterm_epoch),"clear_count":$($global:__copyterm_epoch),"byte_offset":$byteOffset,"line_offset":$lineOffset,"last_clear_timestamp_ms":$ts,"latest_boundary_token":"","clear_command":"Clear-Host"}
+{"session_id":"$($env:COPYTERM_SESSION_ID)","epoch_id":$($global:__copyterm_epoch),"clear_count":$($global:__copyterm_epoch),"byte_offset":$byteOffset,"line_offset":0,"last_clear_timestamp_ms":$ts,"latest_boundary_token":"","clear_command":"Clear-Host"}
 "@
     # Safe atomic update to dedicated .epoch metadata file
     try {
