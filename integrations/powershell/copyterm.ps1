@@ -7,10 +7,11 @@
 # ==============================================================================
 
 # 1. Initialize Unique Per-Session ID
-if (-not $env:COPYTERM_SESSION_ID) {
+if (-not $env:COPYTERM_SESSION_ID -or "$env:COPYTERM_SESSION_PID" -ne "$PID") {
     $ts = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     $rnd = [System.Guid]::NewGuid().ToString("N").Substring(0, 6)
     $env:COPYTERM_SESSION_ID = "sess_${ts}_${PID}_${rnd}"
+    $env:COPYTERM_SESSION_PID = "$PID"
 }
 
 # 2. Configure Persistent Session Storage in User Home (~/.copyterm)
@@ -63,6 +64,11 @@ function global:Clear-Host {
     $global:__copyterm_epoch = [int]$global:__copyterm_epoch + 1
     $ts = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     
+    # Flush host console before measuring byte length
+    try {
+        [System.Console]::Out.Flush()
+    } catch {}
+
     # Safely obtain current byte offset from .buf metadata without opening any file handle
     $byteOffset = [long]0
     try {
@@ -155,6 +161,9 @@ function global:cpt {
         [Parameter(ValueFromRemainingArguments = $true)]
         [string[]]$ArgsList
     )
+    try {
+        [System.Console]::Out.Flush()
+    } catch {}
     if ($global:__copyterm_py -and (Test-Path $global:__copyterm_py)) {
         python $global:__copyterm_py @ArgsList
     } elseif ($global:__copyterm_bin -and (Test-Path $global:__copyterm_bin)) {

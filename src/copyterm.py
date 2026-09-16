@@ -458,6 +458,56 @@ class IdeBridgeClient:
 
 # --- Capture Epoch Manager ---
 
+def parse_meta_file(meta_file: Path) -> Optional[Dict[str, Any]]:
+    try:
+        data = {}
+        for line in meta_file.read_text(encoding='utf-8', errors='replace').splitlines():
+            line = line.strip()
+            if not line or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            data[k.strip()] = v.strip()
+        if "session_id" in data:
+            if "pid" in data:
+                try:
+                    data["pid_int"] = int(data["pid"])
+                except Exception:
+                    data["pid_int"] = 0
+            if "start_time_ms" in data:
+                try:
+                    data["start_time_ms_int"] = int(data["start_time_ms"])
+                except Exception:
+                    data["start_time_ms_int"] = 0
+            return data
+    except Exception:
+        pass
+    return None
+
+def is_process_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        try:
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            h = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if h and h != 0:
+                exit_code = ctypes.c_ulong(0)
+                ctypes.windll.kernel32.GetExitCodeProcess(h, ctypes.byref(exit_code))
+                ctypes.windll.kernel32.CloseHandle(h)
+                STILL_ACTIVE = 259
+                return exit_code.value == STILL_ACTIVE
+            return False
+        except Exception:
+            return False
+    else:
+        try:
+            os.kill(pid, 0)
+            return True
+        except (OSError, ProcessLookupError):
+            return False
+
+# --- Capture Epoch Manager ---
+
 class EpochManager:
     @staticmethod
     def get_epoch_file(session_id: str) -> Path:
@@ -472,37 +522,32 @@ class EpochManager:
             ep_file = EpochManager.get_epoch_file(session_id)
             if ep_file.exists():
                 try:
-                    return json.loads(ep_file.read_text(encoding='utf-8'))
-                except:
+                    return json.loads(ep_file.read_text(encoding='utf-8-sig'))
+                except Exception:
                     pass
 
-        # 2. Check environment session ID
-        env_sess = os.environ.get("COPYTERM_SESSION_ID")
-        if env_sess:
-            ep_file = EpochManager.get_epoch_file(env_sess)
-            if ep_file.exists():
-                try:
-                    return json.loads(ep_file.read_text(encoding='utf-8'))
-                except:
-                    pass
+        # 2. Check environment session ID (only when no explicit session_id is provided)
+        if not session_id:
+            env_sess = os.environ.get("COPYTERM_SESSION_ID")
+            if env_sess:
+                ep_file = EpochManager.get_epoch_file(env_sess)
+                if ep_file.exists():
+                    try:
+                        return json.loads(ep_file.read_text(encoding='utf-8-sig'))
+                    except Exception:
+                        pass
 
-        # 3. Match by process ancestors
-        pids = get_process_ancestors()
-        if sessions_dir.exists():
-            for meta_file in sessions_dir.glob("*.meta"):
-                try:
-                    content = meta_file.read_text(encoding='utf-8')
-                    for p in pids:
-                        if f"pid={p}" in content:
-                            sess_id = meta_file.stem
-                            ep_file = sessions_dir / f"{sess_id}.epoch"
-                            if ep_file.exists():
-                                return json.loads(ep_file.read_text(encoding='utf-8'))
-                except:
-                    pass
+        # 3. Match resolved session
+        sess = SessionManager.resolve_session(session_id)
+        if sess and sess.get("epoch_path") and Path(sess["epoch_path"]).exists():
+            try:
+                return json.loads(Path(sess["epoch_path"]).read_text(encoding='utf-8-sig'))
+            except Exception:
+                pass
 
+        resolved_id = session_id or (sess["session_id"] if sess else os.environ.get("COPYTERM_SESSION_ID", ""))
         return {
-            "session_id": session_id or "",
+            "session_id": resolved_id,
             "epoch_id": 0,
             "clear_count": 0,
             "byte_offset": 0,
@@ -520,25 +565,16 @@ class EpochManager:
         if epoch_id == 0:
             return raw_text
 
-        # Method 1: Exact byte offset slicing (for live continuous stream buffers / transcripts)
-        byte_offset = epoch_state.get("byte_offset", 0)
-        if byte_offset and byte_offset > 0:
-            raw_bytes = raw_text.encode('utf-8', errors='replace')
-            if byte_offset < len(raw_bytes):
-                return raw_bytes[byte_offset:].decode('utf-8', errors='replace').lstrip("\r\n")
-            else:
-                return ""
-
+        # Method 1: Exact boundary token match (for explicit boundary markers)
         token = epoch_state.get("latest_boundary_token", "")
-        # Method 2: Exact boundary token match (for explicit boundary markers)
         if token and token in raw_text:
             idx = raw_text.rfind(token)
             return raw_text[idx + len(token):].lstrip("\r\n")
 
-        # Method 3: Shell prompt clear boundary slicing (for xterm.js / IDE buffer & terminal emulators)
+        # Method 2: Shell prompt clear boundary slicing (for xterm.js / IDE buffer & terminal emulators)
         lines = raw_text.splitlines(keepends=True)
         prompt_clear_re = re.compile(
-            r'(?:PS\s+[^>\n]+>|[a-zA-Z0-9_.-]+@[^#$%>]+[#$%>]|[A-Z]:\\[^>\n]*>|^[>$#%]\s*)\s*(?:clear|cls|Clear-Host)\s*$',
+            r'^(?:PS\s+[^>\n]+>|[a-zA-Z0-9_.-]+@[^#$%>]+[#$%>]|[A-Z]:\\[^>\n]*>|^[>$#%]\s*)\s*(?:clear|cls|Clear-Host)\s*$',
             re.IGNORECASE
         )
         
@@ -554,7 +590,7 @@ class EpochManager:
             sliced_lines = lines[last_idx + 1:]
             return "".join(sliced_lines).lstrip("\r\n")
 
-        # Method 4: Line offset slicing
+        # Method 3: Line offset slicing
         line_offset = epoch_state.get("line_offset", 0)
         if line_offset and line_offset > 0:
             if line_offset < len(lines):
@@ -562,8 +598,19 @@ class EpochManager:
             else:
                 return ""
 
-        # Fallback: if epoch_id > 0 and no content after clear, return empty
-        return ""
+        # Method 4: Byte offset slicing on string if raw_text wasn't pre-sliced at read time
+        byte_offset = epoch_state.get("byte_offset", 0)
+        if byte_offset and byte_offset > 0:
+            raw_bytes = raw_text.encode('utf-8', errors='replace')
+            if byte_offset < len(raw_bytes):
+                return raw_bytes[byte_offset:].decode('utf-8', errors='replace').lstrip("\r\n")
+            else:
+                return ""
+
+        # Fallback: if epoch_id > 0 and a token or non-zero offset was defined, return empty
+        if token or byte_offset > 0 or line_offset > 0:
+            return ""
+        return raw_text
 
     @staticmethod
     def advance_epoch(session_id: str, clear_cmd: str = "cls") -> Dict[str, Any]:
@@ -580,11 +627,11 @@ class EpochManager:
         if buf_file.exists():
             try:
                 byte_offset = buf_file.stat().st_size
-            except:
+            except Exception:
                 pass
             try:
                 line_offset = len(SessionManager.read_buffer(buf_file).splitlines())
-            except:
+            except Exception:
                 pass
 
         updated_state = {
@@ -604,10 +651,10 @@ class EpochManager:
             tmp_file = ep_file.with_suffix(f".{os.urandom(4).hex()}.tmp")
             tmp_file.write_text(json.dumps(updated_state), encoding='utf-8')
             tmp_file.replace(ep_file)
-        except:
+        except Exception:
             try:
                 ep_file.write_text(json.dumps(updated_state), encoding='utf-8')
-            except:
+            except Exception:
                 pass
 
         return updated_state
@@ -732,34 +779,65 @@ class SessionManager:
 
     @staticmethod
     def resolve_session(explicit_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        sessions_dir = get_sessions_dir()
+        sess_id = None
+
+        # 1. Explicit ID
         if explicit_id:
             sess_id = explicit_id
+        # 2. Environment variable
+        elif os.environ.get("COPYTERM_SESSION_ID"):
+            env_id = os.environ.get("COPYTERM_SESSION_ID", "").strip()
+            if env_id:
+                sess_id = env_id
+        # 3. TMUX pane
+        elif os.environ.get("TMUX_PANE"):
+            sess_id = f"tmux_{os.environ.get('TMUX_PANE', '').replace('%', '_')}"
+        # 4. Strict Process Ancestry Resolution (Exact PID match against .meta files)
         else:
-            sess_id = os.environ.get("COPYTERM_SESSION_ID")
-            if not sess_id and os.environ.get("TMUX_PANE"):
-                sess_id = f"tmux_{os.environ.get('TMUX_PANE', '').replace('%', '_')}"
-            if not sess_id:
-                pids = get_process_ancestors()
-                sessions_dir = get_sessions_dir()
-                if sessions_dir.exists():
-                    for meta_file in sessions_dir.glob("*.meta"):
-                        try:
-                            content = meta_file.read_text(encoding='utf-8')
-                            for p in pids:
-                                if f"pid={p}" in content:
-                                    sess_id = meta_file.stem
-                                    break
-                            if sess_id:
-                                break
-                        except:
-                            pass
+            pids = get_process_ancestors()
+            if sessions_dir.exists():
+                all_metas = []
+                for meta_file in sessions_dir.glob("*.meta"):
+                    m_data = parse_meta_file(meta_file)
+                    if m_data and "session_id" in m_data:
+                        m_data["_file"] = meta_file
+                        all_metas.append(m_data)
+
+                # Find the nearest active shell in the hierarchy (skipping wrappers like python.exe, cpt.cmd, cpt.exe)
+                ancestor_info = get_process_ancestor_info()
+                active_shell_pid = None
+                known_shells = ("cmd.exe", "powershell.exe", "pwsh.exe", "bash.exe", "zsh.exe")
+                for info in ancestor_info[1:]:
+                    name = info.get("name", "").lower()
+                    if any(s in name for s in known_shells):
+                        active_shell_pid = info["pid"]
+                        break
+
+                if active_shell_pid:
+                    matches = [m for m in all_metas if m.get("pid_int") == active_shell_pid]
+                    if matches:
+                        matches.sort(key=lambda x: x.get("start_time_ms_int", 0), reverse=True)
+                        live_matches = [m for m in matches if is_process_alive(active_shell_pid)]
+                        matched_meta = live_matches[0] if live_matches else matches[0]
+                        sess_id = matched_meta["session_id"]
+                else:
+                    search_pids = pids[1:] if len(pids) > 1 else pids
+                    for p in search_pids:
+                        matches = [m for m in all_metas if m.get("pid_int") == p]
+                        if matches:
+                            matches.sort(key=lambda x: x.get("start_time_ms_int", 0), reverse=True)
+                            live_matches = [m for m in matches if is_process_alive(p)]
+                            matched_meta = live_matches[0] if live_matches else matches[0]
+                            sess_id = matched_meta["session_id"]
+                            break
 
         if not sess_id:
             return None
 
-        buf_path = get_sessions_dir() / f"{sess_id}.buf"
-        meta_path = get_sessions_dir() / f"{sess_id}.meta"
-        epoch_path = get_sessions_dir() / f"{sess_id}.epoch"
+        buf_path = sessions_dir / f"{sess_id}.buf"
+        meta_path = sessions_dir / f"{sess_id}.meta"
+        epoch_path = sessions_dir / f"{sess_id}.epoch"
 
         return {
             "session_id": sess_id,
@@ -769,9 +847,10 @@ class SessionManager:
         }
 
     @staticmethod
-    def read_buffer(buf_path: Path, last_n: int = 0) -> str:
+    def read_buffer(buf_path: Path, byte_offset: int = 0, last_n: int = 0) -> str:
         if not buf_path.exists():
             return ""
+        raw_bytes = b""
         if sys.platform == "win32":
             try:
                 kernel32 = ctypes.windll.kernel32
@@ -780,7 +859,29 @@ class SessionManager:
                 FILE_SHARE_WRITE = 0x00000002
                 FILE_SHARE_DELETE = 0x00000004
                 OPEN_EXISTING = 3
-                INVALID_HANDLE_VALUE = -1
+                INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+                kernel32.CreateFileW.argtypes = [
+                    ctypes.c_wchar_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p,
+                    ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p
+                ]
+                kernel32.CreateFileW.restype = ctypes.c_void_p
+
+                kernel32.GetFileSize.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+                kernel32.GetFileSize.restype = ctypes.c_ulong
+
+                kernel32.SetFilePointer.argtypes = [
+                    ctypes.c_void_p, ctypes.c_long, ctypes.POINTER(ctypes.c_long), ctypes.c_ulong
+                ]
+                kernel32.SetFilePointer.restype = ctypes.c_ulong
+
+                kernel32.ReadFile.argtypes = [
+                    ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong), ctypes.c_void_p
+                ]
+                kernel32.ReadFile.restype = ctypes.c_bool
+
+                kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+                kernel32.CloseHandle.restype = ctypes.c_bool
 
                 h_file = kernel32.CreateFileW(
                     str(buf_path),
@@ -791,32 +892,63 @@ class SessionManager:
                     0,
                     None
                 )
-                if h_file != INVALID_HANDLE_VALUE and h_file != 0:
+                if h_file and h_file != INVALID_HANDLE_VALUE:
                     try:
                         size_high = ctypes.c_ulong(0)
                         size_low = kernel32.GetFileSize(h_file, ctypes.byref(size_high))
                         total_size = (size_high.value << 32) | size_low
-                        if total_size > 0:
-                            buf = ctypes.create_string_buffer(total_size)
+                        if total_size > 0 and byte_offset < total_size:
+                            read_len = total_size - byte_offset
+                            if byte_offset > 0:
+                                off_low = byte_offset & 0xFFFFFFFF
+                                off_high = ctypes.c_long(byte_offset >> 32)
+                                kernel32.SetFilePointer(h_file, off_low, ctypes.byref(off_high), 0)
+                            buf = ctypes.create_string_buffer(read_len)
                             bytes_read = ctypes.c_ulong(0)
-                            if kernel32.ReadFile(h_file, buf, total_size, ctypes.byref(bytes_read), None):
-                                content = buf.raw[:bytes_read.value].decode('utf-8-sig', errors='replace')
-                                if last_n > 0:
-                                    lines = content.splitlines(keepends=True)
-                                    return "".join(lines[-last_n:])
-                                return content
+                            if kernel32.ReadFile(h_file, buf, read_len, ctypes.byref(bytes_read), None):
+                                raw_bytes = buf.raw[:bytes_read.value]
+                        elif total_size > 0 and byte_offset >= total_size:
+                            return ""
                     finally:
                         kernel32.CloseHandle(h_file)
-            except:
+            except Exception:
                 pass
-        try:
-            content = buf_path.read_bytes().decode('utf-8-sig', errors='replace')
-            if last_n > 0:
-                lines = content.splitlines(keepends=True)
-                return "".join(lines[-last_n:])
-            return content
-        except:
+        if not raw_bytes:
+            try:
+                data = buf_path.read_bytes()
+                if byte_offset > 0:
+                    if byte_offset < len(data):
+                        raw_bytes = data[byte_offset:]
+                    else:
+                        return ""
+                else:
+                    raw_bytes = data
+            except Exception:
+                return ""
+
+        if not raw_bytes:
             return ""
+
+        # Decode raw_bytes
+        if raw_bytes.startswith(b'\xef\xbb\xbf'):
+            content = raw_bytes[3:].decode('utf-8', errors='replace')
+        elif raw_bytes.startswith(b'\xff\xfe'):
+            content = raw_bytes[2:].decode('utf-16le', errors='replace')
+        elif raw_bytes.startswith(b'\xfe\xff'):
+            content = raw_bytes[2:].decode('utf-16be', errors='replace')
+        else:
+            try:
+                content = raw_bytes.decode('utf-8')
+            except UnicodeDecodeError:
+                try:
+                    content = raw_bytes.decode('utf-16le')
+                except UnicodeDecodeError:
+                    content = raw_bytes.decode('utf-8', errors='replace')
+
+        if last_n > 0:
+            lines = content.splitlines(keepends=True)
+            return "".join(lines[-last_n:])
+        return content
 
     @staticmethod
     def capture_active_terminal(args: argparse.Namespace, debug: bool = False) -> Tuple[Optional[str], Dict[str, Any]]:
@@ -878,24 +1010,18 @@ class SessionManager:
                         "session_id": f"tmux_{tmux_pane.replace('%', '_')}",
                         "epoch_id": epoch_state.get("epoch_id", 0)
                     }
-            except:
+            except Exception:
                 pass
 
-        # TIER 3 & 4: CopyTerm PTY Session or Shell Integration Transcript Buffer / Windows Console Buffer
+        # TIER 3: CopyTerm PTY Session or Shell Integration Transcript Buffer
         sess = SessionManager.resolve_session(args.session_id)
         if sess:
-            raw_content = SessionManager.read_buffer(sess["buf_path"])
+            byte_offset = epoch_state.get("byte_offset", 0) if epoch_state.get("epoch_id", 0) > 0 else 0
+            raw_content = SessionManager.read_buffer(sess["buf_path"], byte_offset=byte_offset)
             source_desc = "CopyTerm session transcript"
 
-            # If transcript buffer is empty and on Windows, read Windows Console Screen Buffer
-            if not raw_content and sys.platform == "win32":
-                console_text = WindowsConsoleCapture.capture_console_buffer()
-                if console_text:
-                    raw_content = console_text
-                    source_desc = "Windows Console Screen Buffer"
-
             if raw_content:
-                sliced_content = EpochManager.slice_buffer_by_epoch(raw_content, epoch_state)
+                sliced_content = raw_content
                 if args.last > 0:
                     lines = sliced_content.splitlines(keepends=True)
                     sliced_content = "".join(lines[-args.last:])
@@ -906,8 +1032,17 @@ class SessionManager:
                     "session_id": sess["session_id"],
                     "epoch_id": epoch_state.get("epoch_id", 0)
                 }
+            elif epoch_state.get("epoch_id", 0) > 0 and sess["buf_path"].exists():
+                # Legitimate empty post-clear epoch: return empty without falling back to pre-clear
+                return "", {
+                    "source": source_desc,
+                    "terminal_name": sess["session_id"],
+                    "historical": False,
+                    "session_id": sess["session_id"],
+                    "epoch_id": epoch_state.get("epoch_id", 0)
+                }
 
-        # Fallback: Check if Windows Console Buffer can be read directly
+        # TIER 4: Windows Console Screen Buffer Fallback (e.g. unhooked CMD/conhost)
         if sys.platform == "win32" and not args.session_id:
             console_text = WindowsConsoleCapture.capture_console_buffer()
             if console_text:
@@ -1126,9 +1261,13 @@ def main():
     subparsers.add_parser("version", help="Show version information")
     
     doc_parser = subparsers.add_parser("doctor", help="Show diagnostics")
+    doc_parser.add_argument("--session-id", type=str, help="Override session ID")
     doc_parser.add_argument("--bridge-test", action="store_true", help="Perform real live terminal buffer capture test")
+    doc_parser.add_argument("--debug-bridge", action="store_true", help="Print bridge debugging diagnostics to stderr")
+    btest_parser = subparsers.add_parser("bridge-test", help="Test live IDE bridge terminal capture")
+    btest_parser.add_argument("--session-id", type=str, help="Override session ID")
+    btest_parser.add_argument("--debug-bridge", action="store_true", help="Print bridge debugging diagnostics to stderr")
     
-    subparsers.add_parser("bridge-test", help="Test live IDE bridge terminal capture")
     subparsers.add_parser("list", help="List active sessions")
     subparsers.add_parser("clean-sessions", help="Clean stale sessions")
     
@@ -1157,6 +1296,12 @@ def main():
     # EPOCH-ADVANCE Handler
     if getattr(args, 'epoch_advance', None):
         sess_id, cmd_name = args.epoch_advance
+        if not sess_id or sess_id in ('""', "''", "auto", "None"):
+            sess = SessionManager.resolve_session()
+            if sess:
+                sess_id = sess["session_id"]
+            else:
+                sess_id = SessionManager.init_session("cmd")
         EpochManager.advance_epoch(sess_id, cmd_name)
         return 0
 
@@ -1227,8 +1372,9 @@ def main():
             return 1
 
     if args.subcommand == "doctor":
-        epoch_state = EpochManager.load_epoch_state(args.session_id)
-        sess = SessionManager.resolve_session(args.session_id)
+        sess_id_override = getattr(args, "session_id", None)
+        epoch_state = EpochManager.load_epoch_state(sess_id_override)
+        sess = SessionManager.resolve_session(sess_id_override)
         data_dir = get_data_dir()
         bin_dir = data_dir / "bin"
         
@@ -1275,62 +1421,102 @@ def main():
         
         # Accurately detect shell
         shell_name = "Unknown"
-        if sys.platform == "win32":
-            pids = get_process_ancestors()
-            kernel32 = ctypes.windll.kernel32
-            TH32CS_SNAPPROCESS = 0x00000002
-            class PROCESSENTRY32(ctypes.Structure):
-                _fields_ = [
-                    ('dwSize', ctypes.c_ulong),
-                    ('cntUsage', ctypes.c_ulong),
-                    ('th32ProcessID', ctypes.c_ulong),
-                    ('th32DefaultHeapID', ctypes.c_void_p),
-                    ('th32ModuleID', ctypes.c_ulong),
-                    ('cntThreads', ctypes.c_ulong),
-                    ('th32ParentProcessID', ctypes.c_ulong),
-                    ('pcPriClassBase', ctypes.c_long),
-                    ('dwFlags', ctypes.c_ulong),
-                    ('szExeFile', ctypes.c_char * 260)
-                ]
-            h_snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
-            proc_names = {}
-            if h_snap != -1 and h_snap != 0:
-                try:
-                    pe = PROCESSENTRY32()
-                    pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
-                    if kernel32.Process32First(h_snap, ctypes.byref(pe)):
-                        while True:
-                            proc_names[pe.th32ProcessID] = pe.szExeFile.decode('utf-8', errors='ignore').lower()
-                            if not kernel32.Process32Next(h_snap, ctypes.byref(pe)):
-                                break
-                finally:
-                    kernel32.CloseHandle(h_snap)
-            for p in pids:
-                n = proc_names.get(p, "")
-                if "cmd.exe" in n:
-                    shell_name = "CMD"
-                    break
-                elif "pwsh.exe" in n or "pwsh" in n:
+        if sess and sess.get("meta_path") and Path(sess["meta_path"]).exists():
+            m_data = parse_meta_file(Path(sess["meta_path"]))
+            if m_data and m_data.get("shell_name"):
+                s_name = m_data["shell_name"].lower()
+                if s_name == "powershell":
+                    shell_name = "PowerShell"
+                elif s_name in ("pwsh", "powershell core"):
                     shell_name = "PowerShell Core"
-                    break
-                elif "powershell.exe" in n or "powershell" in n:
-                    shell_name = "PowerShell"
-                    break
-                elif "bash.exe" in n or "bash" in n:
-                    shell_name = "Bash"
-                    break
-                elif "zsh.exe" in n or "zsh" in n:
-                    shell_name = "Zsh"
-                    break
-            if shell_name == "Unknown":
-                if os.environ.get("PSExecutionPolicyPreference") or os.environ.get("PSModulePath"):
-                    shell_name = "PowerShell"
-                elif os.environ.get("PROMPT"):
+                elif s_name == "cmd":
                     shell_name = "CMD"
-                else:
+                elif s_name == "bash":
+                    shell_name = "Bash"
+                elif s_name == "zsh":
+                    shell_name = "Zsh"
+
+        if shell_name == "Unknown":
+            if sys.platform == "win32":
+                pids = get_process_ancestors()
+                kernel32 = ctypes.windll.kernel32
+                TH32CS_SNAPPROCESS = 0x00000002
+                class PROCESSENTRY32(ctypes.Structure):
+                    _fields_ = [
+                        ('dwSize', ctypes.c_ulong),
+                        ('cntUsage', ctypes.c_ulong),
+                        ('th32ProcessID', ctypes.c_ulong),
+                        ('th32DefaultHeapID', ctypes.c_void_p),
+                        ('th32ModuleID', ctypes.c_ulong),
+                        ('cntThreads', ctypes.c_ulong),
+                        ('th32ParentProcessID', ctypes.c_ulong),
+                        ('pcPriClassBase', ctypes.c_long),
+                        ('dwFlags', ctypes.c_ulong),
+                        ('szExeFile', ctypes.c_char * 260)
+                    ]
+                h_snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+                proc_names = {}
+                if h_snap != -1 and h_snap != 0:
+                    try:
+                        pe = PROCESSENTRY32()
+                        pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+                        if kernel32.Process32First(h_snap, ctypes.byref(pe)):
+                            while True:
+                                proc_names[pe.th32ProcessID] = pe.szExeFile.decode('utf-8', errors='ignore').lower()
+                                if not kernel32.Process32Next(h_snap, ctypes.byref(pe)):
+                                    break
+                    finally:
+                        kernel32.CloseHandle(h_snap)
+
+                p1_name = proc_names.get(pids[1] if len(pids) > 1 else 0, "")
+                p2_name = proc_names.get(pids[2] if len(pids) > 2 else 0, "")
+
+                if "pwsh.exe" in p1_name or "pwsh" in p1_name:
+                    shell_name = "PowerShell Core"
+                elif "powershell.exe" in p1_name or "powershell" in p1_name:
                     shell_name = "PowerShell"
-        else:
-            shell_name = os.environ.get("SHELL", "bash").split("/")[-1]
+                elif "bash.exe" in p1_name or "bash" in p1_name:
+                    shell_name = "Bash"
+                elif "zsh.exe" in p1_name or "zsh" in p1_name:
+                    shell_name = "Zsh"
+                elif "cmd.exe" in p1_name:
+                    if "powershell.exe" in p2_name or "powershell" in p2_name:
+                        shell_name = "PowerShell"
+                    elif "pwsh.exe" in p2_name or "pwsh" in p2_name:
+                        shell_name = "PowerShell Core"
+                    elif "bash.exe" in p2_name or "bash" in p2_name:
+                        shell_name = "Bash"
+                    elif "zsh.exe" in p2_name or "zsh" in p2_name:
+                        shell_name = "Zsh"
+                    else:
+                        shell_name = "CMD"
+                else:
+                    for p in pids:
+                        n = proc_names.get(p, "")
+                        if "pwsh.exe" in n or "pwsh" in n:
+                            shell_name = "PowerShell Core"
+                            break
+                        elif "powershell.exe" in n or "powershell" in n:
+                            shell_name = "PowerShell"
+                            break
+                        elif "bash.exe" in n or "bash" in n:
+                            shell_name = "Bash"
+                            break
+                        elif "zsh.exe" in n or "zsh" in n:
+                            shell_name = "Zsh"
+                            break
+                        elif "cmd.exe" in n:
+                            shell_name = "CMD"
+                            break
+                    if shell_name == "Unknown":
+                        if os.environ.get("PSExecutionPolicyPreference") or os.environ.get("PSModulePath"):
+                            shell_name = "PowerShell"
+                        elif os.environ.get("PROMPT"):
+                            shell_name = "CMD"
+                        else:
+                            shell_name = "PowerShell"
+            else:
+                shell_name = os.environ.get("SHELL", "bash").split("/")[-1]
 
         shell_integration_status = "OK" if sess else ("INSTALLED (Restart terminal to activate)" if integrations_ok else "NOT FOUND")
 
@@ -1466,7 +1652,10 @@ def main():
     size_str = f"{byte_count} B" if byte_count < 1024 else f"{byte_count // 1024} KB"
     redact_str = f" (Masked {secrets_count} secret tokens)" if secrets_count > 0 else ""
     epoch_str = f" [Epoch {meta.get('epoch_id', 0)}]" if meta.get('epoch_id') is not None else ""
-    print(f"Copied {line_count} lines ({size_str}) from terminal [{meta.get('terminal_name', 'active')}]{epoch_str} to clipboard.{redact_str}")
+    if line_count == 0 and byte_count == 0:
+        print(f"No content to copy from terminal [{meta.get('terminal_name', 'active')}]{epoch_str} (buffer is empty).")
+    else:
+        print(f"Copied {line_count} lines ({size_str}) from terminal [{meta.get('terminal_name', 'active')}]{epoch_str} to clipboard.{redact_str}")
     return 0
 
 if __name__ == "__main__":

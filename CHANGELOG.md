@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Canonical Short Command `cpt`**: Introduced `cpt` as the primary user-facing command across PowerShell, Bash, Zsh, CMD, and native binary distributions (`cpt.exe`), while preserving `copyterm` as a fully backward-compatible alias.
+- **Active Terminal Session Capture & Slicing Repair**:
+  - Fixed session resolution to strictly match integer process IDs against process ancestors and prevent parent PID collisions across multiple terminals.
+  - Configured explicit Win32 `ctypes` 64-bit parameter prototypes (`argtypes`/`restype`) for `CreateFileW`, `SetFilePointer`, `ReadFile`, and `CloseHandle` to eliminate 64-bit handle truncation on x64 Windows.
+  - Eliminated double byte offset slicing between `SessionManager.read_buffer` and `EpochManager.slice_buffer_by_epoch`.
+  - Added `utf-8-sig` decoding tolerance to seamlessly parse `.epoch` and `.meta` files written with UTF-8 byte order marks (BOM) by Windows PowerShell 5.1.
+- **PowerShell Session Isolation & Flush Guarantee**:
+  - Configured child PowerShell processes to detect parent PID divergence and initialize independent sessions.
+  - Added synchronous host console flushing in `cpt` and `Clear-Host` hooks before recording byte offsets to ensure pre-clear outputs are committed to disk.
+- **Installer Syntax & Profile Block Management**:
+  - Repaired missing closing bracket `}` in `install.ps1` profile iteration block.
+  - Verified 100% parse and execution safety across all PowerShell integration scripts.
 - **Capture Epoch Model (`clear` as a Copy Boundary)**:
   - When `clear` (or `cls`, `Clear-Host`) is executed, the shell integration establishes a new CopyTerm Capture Epoch (`epoch += 1`).
   - `cpt` captures only output belonging to the current epoch (lines produced after the latest `clear`).
