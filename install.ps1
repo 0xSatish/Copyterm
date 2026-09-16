@@ -77,6 +77,8 @@ if ($Uninstall) {
                 [System.IO.File]::WriteAllText($p, $newContent)
             } catch {}
         }
+    }
+
     # Remove CMD AutoRun
     try {
         $regKey = "HKCU:\Software\Microsoft\Command Processor"
